@@ -34,6 +34,8 @@ test("server-renders the finished Blockscope experience", async () => {
   assert.match(html, /Blockscope — Machine Payments Intelligence/i);
   assert.match(html, /The machine economy/i);
   assert.match(html, /Ask Blockscope/i);
+  assert.match(html, /Ready to query the network/i);
+  assert.match(html, /Press Ask to calculate/i);
   assert.match(html, /Network pulse/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });

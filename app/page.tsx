@@ -138,9 +138,32 @@ function percentageDelta(value: number, baseline: number) {
 
 function getDays(question: string): 1 | 7 | 30 {
   const text = question.toLowerCase();
-  if (text.includes("30")) return 30;
-  if (text.includes("7") || text.includes("week")) return 7;
-  return 1;
+  const candidates = [
+    {
+      days: 1 as const,
+      indexes: [
+        text.indexOf("24"),
+        text.indexOf("today"),
+        text.indexOf("day"),
+      ],
+    },
+    {
+      days: 7 as const,
+      indexes: [text.indexOf("7"), text.indexOf("week")],
+    },
+    {
+      days: 30 as const,
+      indexes: [text.indexOf("30"), text.indexOf("month")],
+    },
+  ]
+    .map((candidate) => ({
+      days: candidate.days,
+      index: Math.min(...candidate.indexes.filter((index) => index >= 0)),
+    }))
+    .filter((candidate) => Number.isFinite(candidate.index))
+    .sort((a, b) => a.index - b.index);
+
+  return candidates[0]?.days ?? 1;
 }
 
 function answerQuestion(data: ExplorerData, question: string): Answer {
@@ -360,6 +383,9 @@ export default function Home() {
     "What is the average transaction size in USD for the past 24 hours and how has it changed in the last 30 days?",
   );
   const [submittedQuestion, setSubmittedQuestion] = useState(question);
+  const [hasAsked, setHasAsked] = useState(false);
+  const [answerRevision, setAnswerRevision] = useState(0);
+  const [justAnswered, setJustAnswered] = useState(false);
   const [sort, setSort] = useState<"transactions" | "volume" | "buyers">(
     "transactions",
   );
@@ -404,9 +430,19 @@ export default function Home() {
     ? selected.stats.totalVolume / selected.stats.totalTransactions
     : 0;
 
+  function runQuestion(nextQuestion: string) {
+    const trimmed = nextQuestion.trim();
+    if (!trimmed) return;
+    setSubmittedQuestion(trimmed);
+    setHasAsked(true);
+    setAnswerRevision((revision) => revision + 1);
+    setJustAnswered(true);
+    window.setTimeout(() => setJustAnswered(false), 1400);
+  }
+
   function submitQuestion(event: FormEvent) {
     event.preventDefault();
-    if (question.trim()) setSubmittedQuestion(question.trim());
+    runQuestion(question);
   }
 
   return (
@@ -470,37 +506,58 @@ export default function Home() {
             <div className="queryActions">
               <span>Try volume, agents, services, or average payment size</span>
               <button type="submit" aria-label="Ask question">
-                Ask <span>↗</span>
+                {justAnswered ? "Answered ✓" : "Ask"}{" "}
+                {!justAnswered && <span>↗</span>}
               </button>
             </div>
           </form>
 
-          <div className="answer">
-            <div className="answerHead">
-              <span>{answer.eyebrow}</span>
-              <span className="verified">Verified calculation</span>
+          {!hasAsked ? (
+            <div className="answer answerEmpty" aria-live="polite">
+              <span className="emptySpark">✦</span>
+              <div>
+                <strong>Ready to query the network</strong>
+                <p>
+                  Press Ask to calculate the prefilled question from the latest
+                  indexed activity.
+                </p>
+              </div>
             </div>
-            <div className="answerValueRow">
-              <strong>{answer.value}</strong>
-              {answer.change !== null && (
-                <span
-                  className={
-                    answer.change >= 0 ? "changePositive" : "changeNegative"
-                  }
-                >
-                  {answer.change >= 0 ? "↑" : "↓"}{" "}
-                  {Math.abs(answer.change).toFixed(1)}%
-                </span>
-              )}
+          ) : (
+            <div
+              key={answerRevision}
+              className="answer answerFlash"
+              aria-live="polite"
+              role="status"
+            >
+              <div className="answerHead">
+                <span>{answer.eyebrow}</span>
+                <span className="verified">Verified calculation</span>
+              </div>
+              <div className="answerValueRow">
+                <strong>{answer.value}</strong>
+                {answer.change !== null && (
+                  <span
+                    className={
+                      answer.change >= 0
+                        ? "changePositive"
+                        : "changeNegative"
+                    }
+                  >
+                    {answer.change >= 0 ? "↑" : "↓"}{" "}
+                    {Math.abs(answer.change).toFixed(1)}%
+                  </span>
+                )}
+              </div>
+              <p className="comparison">{answer.comparison}</p>
+              <Bars buckets={answerBuckets} metric={answer.metric} />
+              <div className="formula">
+                <span>Calculation</span>
+                <code>{answer.formula}</code>
+              </div>
+              <p className="explanation">{answer.explanation}</p>
             </div>
-            <p className="comparison">{answer.comparison}</p>
-            <Bars buckets={answerBuckets} metric={answer.metric} />
-            <div className="formula">
-              <span>Calculation</span>
-              <code>{answer.formula}</code>
-            </div>
-            <p className="explanation">{answer.explanation}</p>
-          </div>
+          )}
         </aside>
       </section>
 
@@ -511,7 +568,7 @@ export default function Home() {
             key={item}
             onClick={() => {
               setQuestion(item);
-              setSubmittedQuestion(item);
+              runQuestion(item);
             }}
           >
             {item}
