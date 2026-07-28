@@ -136,54 +136,72 @@ function percentageDelta(value: number, baseline: number) {
   return ((value - baseline) / baseline) * 100;
 }
 
-function getDays(question: string): 1 | 7 | 30 {
+function getTimeframes(question: string): {
+  primary: 1 | 7 | 30;
+  comparison: 1 | 7 | 30 | null;
+} {
   const text = question.toLowerCase();
-  const candidates = [
+  const occurrences: Array<{ days: 1 | 7 | 30; index: number }> = [];
+  const patterns: Array<{ days: 1 | 7 | 30; pattern: RegExp }> = [
     {
-      days: 1 as const,
-      indexes: [
-        text.indexOf("24"),
-        text.indexOf("today"),
-        text.indexOf("day"),
-      ],
+      days: 1,
+      pattern: /\b(?:24\s*(?:hours?|h)|today|1\s*day|one\s*day)\b/g,
     },
     {
-      days: 7 as const,
-      indexes: [text.indexOf("7"), text.indexOf("week")],
+      days: 7,
+      pattern: /\b(?:7\s*(?:days?|d)|one\s*week|a\s*week|week)\b/g,
     },
     {
-      days: 30 as const,
-      indexes: [text.indexOf("30"), text.indexOf("month")],
+      days: 30,
+      pattern: /\b(?:30\s*(?:days?|d)|one\s*month|a\s*month|month)\b/g,
     },
-  ]
-    .map((candidate) => ({
-      days: candidate.days,
-      index: Math.min(...candidate.indexes.filter((index) => index >= 0)),
-    }))
-    .filter((candidate) => Number.isFinite(candidate.index))
-    .sort((a, b) => a.index - b.index);
+  ];
 
-  return candidates[0]?.days ?? 1;
+  patterns.forEach(({ days, pattern }) => {
+    for (const match of text.matchAll(pattern)) {
+      if (match.index !== undefined) occurrences.push({ days, index: match.index });
+    }
+  });
+
+  occurrences.sort((a, b) => a.index - b.index);
+  const primary = occurrences[0]?.days ?? 1;
+  const comparison =
+    occurrences.find((occurrence) => occurrence.days !== primary)?.days ??
+    (primary === 30 ? null : 30);
+
+  return { primary, comparison };
 }
 
 function answerQuestion(data: ExplorerData, question: string): Answer {
   const text = question.toLowerCase();
-  const days = getDays(text);
+  const { primary: days, comparison: comparisonDays } = getTimeframes(text);
   const current = data.periods[String(days) as "1" | "7" | "30"].stats;
-  const baseline = data.periods["30"].stats;
+  const baseline = comparisonDays
+    ? data.periods[String(comparisonDays) as "1" | "7" | "30"].stats
+    : null;
   const periodLabel = days === 1 ? "past 24 hours" : `past ${days} days`;
+  const comparisonLabel =
+    comparisonDays === 1
+      ? "the 24-hour period"
+      : comparisonDays
+        ? `the aggregate ${comparisonDays}-day period`
+        : null;
 
   if (
     (text.includes("average") || text.includes("avg") || text.includes("size")) &&
     (text.includes("transaction") || text.includes("payment"))
   ) {
     const value = current.totalVolume / current.totalTransactions;
-    const benchmark = baseline.totalVolume / baseline.totalTransactions;
+    const benchmark = baseline
+      ? baseline.totalVolume / baseline.totalTransactions
+      : null;
     return {
       eyebrow: `Average payment · ${periodLabel}`,
       value: usd(value, true),
-      change: percentageDelta(value, benchmark),
-      comparison: "vs the aggregate 30-day average",
+      change: benchmark === null ? null : percentageDelta(value, benchmark),
+      comparison: comparisonLabel
+        ? `vs the average across ${comparisonLabel}`
+        : "aggregate average for the selected period",
       formula: `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} transactions`,
       explanation:
         "This is total USD payment volume divided by successful transactions. It measures payment size—not network fees or token transfers.",
@@ -200,8 +218,12 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
     return {
       eyebrow: `Unique paying agents · ${periodLabel}`,
       value: compact(current.uniqueSenders),
-      change: percentageDelta(current.uniqueSenders, baseline.uniqueSenders),
-      comparison: "vs unique agents seen across 30 days",
+      change: baseline
+        ? percentageDelta(current.uniqueSenders, baseline.uniqueSenders)
+        : null,
+      comparison: comparisonLabel
+        ? `vs unique agents seen across ${comparisonLabel}`
+        : "unique agents in the selected period",
       formula: `${compact(current.uniqueSenders)} distinct paying addresses`,
       explanation:
         "Each sender is counted once in the selected period, even if it made many payments.",
@@ -243,11 +265,15 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
     return {
       eyebrow: `Active services · ${periodLabel}`,
       value: compact(current.uniqueRecipients),
-      change: percentageDelta(
-        current.uniqueRecipients,
-        baseline.uniqueRecipients,
-      ),
-      comparison: "vs services seen across 30 days",
+      change: baseline
+        ? percentageDelta(
+            current.uniqueRecipients,
+            baseline.uniqueRecipients,
+          )
+        : null,
+      comparison: comparisonLabel
+        ? `vs services seen across ${comparisonLabel}`
+        : "active services in the selected period",
       formula: `${compact(current.uniqueRecipients)} distinct payment recipients`,
       explanation:
         "This counts unique payment recipients with observed activity in the selected period.",
@@ -263,12 +289,18 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
     text.includes("dollar")
   ) {
     const daily = current.totalVolume / days;
-    const baselineDaily = baseline.totalVolume / 30;
+    const baselineDaily =
+      baseline && comparisonDays
+        ? baseline.totalVolume / comparisonDays
+        : null;
     return {
       eyebrow: `Payment volume · ${periodLabel}`,
       value: usd(current.totalVolume),
-      change: percentageDelta(daily, baselineDaily),
-      comparison: "daily run-rate vs the 30-day daily average",
+      change:
+        baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
+      comparison: comparisonDays
+        ? `daily run-rate vs the ${comparisonDays}-day daily average`
+        : "total observed volume in the selected period",
       formula: `${compact(current.totalTransactions)} payments settled in the period`,
       explanation:
         "Volume is the total observed USD value of successful MPP payments in the selected period.",
@@ -278,12 +310,18 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
   }
 
   const daily = current.totalTransactions / days;
-  const baselineDaily = baseline.totalTransactions / 30;
+  const baselineDaily =
+    baseline && comparisonDays
+      ? baseline.totalTransactions / comparisonDays
+      : null;
   return {
     eyebrow: `Successful transactions · ${periodLabel}`,
     value: compact(current.totalTransactions),
-    change: percentageDelta(daily, baselineDaily),
-    comparison: "daily run-rate vs the 30-day daily average",
+    change:
+      baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
+    comparison: comparisonDays
+      ? `daily run-rate vs the ${comparisonDays}-day daily average`
+      : "total successful transactions in the selected period",
     formula: `${compact(Math.round(daily))} transactions per day`,
     explanation:
       "This counts observed successful MPP payments across all indexed services.",
