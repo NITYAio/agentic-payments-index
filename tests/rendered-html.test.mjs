@@ -31,8 +31,10 @@ test("server-renders the finished Blockscope experience", async () => {
   assert.match(response.headers.get("content-type") ?? "", /^text\/html\b/i);
 
   const html = await response.text();
-  assert.match(html, /Blockscope — Machine Payments Intelligence/i);
-  assert.match(html, /The machine economy/i);
+  assert.match(html, /Blockscope — Stablecoin Payments Intelligence/i);
+  assert.match(html, /Agent payments/i);
+  assert.match(html, /All protocols/i);
+  assert.match(html, /MPP \+ x402/i);
   assert.match(html, /Ask Blockscope/i);
   assert.match(html, /Ready to query the network/i);
   assert.match(html, /Press Ask to calculate/i);
@@ -45,12 +47,13 @@ test("ships product metadata and removes starter dependencies", async () => {
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
-    access(new URL("../public/og.png", import.meta.url)),
+    access(new URL("../public/og-v2.png", import.meta.url)),
   ]);
 
-  assert.match(page, /MPPScan public analytics/i);
+  assert.match(page, /Compare MPP and x402/i);
+  assert.match(page, /protocolForQuestion/i);
   assert.match(page, /Verified calculation/i);
-  assert.match(layout, /og\.png/i);
+  assert.match(layout, /og-v2\.png/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview", projectRoot)));
 });

@@ -6,6 +6,7 @@
   --panel-light: #102019;
   --mint: #b9ff66;
   --mint-soft: #8fdc45;
+  --aqua: #72e3da;
   --cream: #edf0e7;
   --muted: #849089;
   --line: rgba(237, 240, 231, 0.13);
@@ -155,6 +156,65 @@ button {
 .previewDot {
   background: #f0b35c;
   box-shadow: 0 0 0 5px rgba(240, 179, 92, 0.08);
+}
+
+.protocolStrip {
+  position: sticky;
+  z-index: 19;
+  top: 74px;
+  display: flex;
+  gap: 30px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 11px 4.5vw;
+  border-bottom: 1px solid var(--line);
+  background: rgba(6, 17, 12, 0.94);
+  backdrop-filter: blur(20px);
+}
+
+.protocolTabs {
+  display: inline-flex;
+  padding: 3px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.015);
+}
+
+.protocolTabs button {
+  min-width: 92px;
+  padding: 8px 13px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.62rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  cursor: pointer;
+}
+
+.protocolTabs button.active {
+  background: var(--cream);
+  color: var(--ink);
+}
+
+.protocolStrip p {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  max-width: 720px;
+  margin: 0;
+  color: #7d8981;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  text-align: right;
+}
+
+.protocolStrip p span {
+  flex: 0 0 auto;
+  color: var(--mint);
+  font-family: var(--font-geist-mono), monospace;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
 }
 
 .hero {
@@ -620,6 +680,79 @@ button {
   margin-top: 23px;
 }
 
+.protocolComparison {
+  display: grid;
+  grid-template-columns: minmax(190px, 0.42fr) minmax(0, 1.58fr);
+  gap: 34px;
+  align-items: center;
+  margin-top: 1px;
+  padding: 24px 26px;
+  border: 1px solid var(--line);
+  background:
+    linear-gradient(90deg, rgba(185, 255, 102, 0.025), rgba(114, 227, 218, 0.02)),
+    var(--panel);
+}
+
+.comparisonHeading span,
+.comparisonHeading small {
+  display: block;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.comparisonHeading strong {
+  display: block;
+  margin: 6px 0 7px;
+  font-size: 1.2rem;
+  font-weight: 520;
+}
+
+.shareRows {
+  display: grid;
+  gap: 18px;
+}
+
+.shareRow {
+  display: grid;
+  grid-template-columns: 90px minmax(120px, 1fr) minmax(210px, auto);
+  gap: 17px;
+  align-items: center;
+}
+
+.shareRow > span {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.shareRow b {
+  color: #aab4ae;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.59rem;
+  font-weight: 440;
+  text-align: right;
+}
+
+.shareTrack {
+  display: flex;
+  overflow: hidden;
+  height: 8px;
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.shareTrack i {
+  display: block;
+  height: 100%;
+  min-width: 1px;
+}
+
+.shareMpp {
+  background: var(--mint);
+}
+
+.shareX402 {
+  background: var(--aqua);
+}
+
 .activityGrid {
   display: grid;
   grid-template-columns: minmax(0, 2fr) minmax(260px, 0.8fr);
@@ -867,6 +1000,23 @@ td:first-child {
   color: var(--mint);
 }
 
+.serviceBadge {
+  display: inline-block;
+  margin-top: 5px;
+  padding: 2px 5px;
+  border: 1px solid rgba(185, 255, 102, 0.18);
+  color: var(--mint);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.5rem;
+  line-height: 1.2;
+  text-transform: uppercase;
+}
+
+.serviceBadge.x402 {
+  border-color: rgba(114, 227, 218, 0.2);
+  color: var(--aqua);
+}
+
 .serviceCopy small {
   display: block;
   overflow: hidden;
@@ -977,6 +1127,10 @@ footer > span {
     grid-template-columns: repeat(2, 1fr);
   }
 
+  .protocolComparison {
+    grid-template-columns: 1fr;
+  }
+
   .methodology {
     grid-template-columns: 1fr;
   }
@@ -990,6 +1144,25 @@ footer > span {
   }
 
   .navLinks {
+    display: none;
+  }
+
+  .protocolStrip {
+    top: 64px;
+    padding: 9px 20px;
+  }
+
+  .protocolTabs {
+    display: flex;
+    width: 100%;
+  }
+
+  .protocolTabs button {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .protocolStrip p {
     display: none;
   }
 
@@ -1036,6 +1209,20 @@ footer > span {
 
   .metrics {
     grid-template-columns: 1fr;
+  }
+
+  .protocolComparison {
+    gap: 24px;
+    padding: 22px 18px;
+  }
+
+  .shareRow {
+    grid-template-columns: 78px minmax(80px, 1fr);
+  }
+
+  .shareRow b {
+    grid-column: 1 / -1;
+    text-align: left;
   }
 
   .activityGrid {

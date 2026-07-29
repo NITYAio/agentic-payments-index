@@ -23,29 +23,29 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(origin),
-    title: "Blockscope — Machine Payments Intelligence",
+    title: "Blockscope — Stablecoin Payments Intelligence",
     description:
-      "Explore live MPP network activity and ask plain-English questions about machine payment volume, agents, services, and transaction size.",
+      "Compare observed MPP and x402 stablecoin payments, explore services, and ask plain-English questions about protocol activity.",
     openGraph: {
-      title: "Blockscope — The machine economy, answered.",
+      title: "Blockscope — Agent payments, made legible.",
       description:
-        "Live MPP payment intelligence with auditable, plain-English answers.",
+        "Live MPP and x402 payment intelligence with auditable answers.",
       type: "website",
       images: [
         {
-          url: `${origin}/og.png`,
-          width: 1732,
+          url: `${origin}/og-v2.png`,
+          width: 1733,
           height: 908,
-          alt: "Blockscope — The machine economy, answered.",
+          alt: "Blockscope — Agent payments, made legible.",
         },
       ],
     },
     twitter: {
       card: "summary_large_image",
-      title: "Blockscope — The machine economy, answered.",
+      title: "Blockscope — Agent payments, made legible.",
       description:
-        "Live MPP payment intelligence with auditable, plain-English answers.",
-      images: [`${origin}/og.png`],
+        "Live MPP and x402 payment intelligence with auditable answers.",
+      images: [`${origin}/og-v2.png`],
     },
   };
 }

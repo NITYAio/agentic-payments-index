@@ -23,6 +23,8 @@ type Service = {
   description: string;
   url: string;
   rank: number;
+  protocol: "mpp" | "x402";
+  network: string;
   stats: {
     transactions: number;
     volume: number;
@@ -36,12 +38,21 @@ type Period = {
   buckets: Bucket[];
 };
 
+type ProtocolKey = "all" | "mpp" | "x402";
+
+type ProtocolData = {
+  source: string;
+  live: boolean;
+  disclosure: string;
+  periods: Record<"1" | "7" | "30", Period>;
+  services: Record<"1" | "7" | "30", Service[]>;
+};
+
 type ExplorerData = {
   source: string;
   live: boolean;
   asOf: string;
-  periods: Record<"1" | "7" | "30", Period>;
-  services: Record<"1" | "7" | "30", Service[]>;
+  protocols: Record<ProtocolKey, ProtocolData>;
 };
 
 type Answer = {
@@ -53,6 +64,7 @@ type Answer = {
   explanation: string;
   days: 1 | 7 | 30;
   metric: "average" | "volume" | "transactions" | "buyers" | "servers";
+  protocol: ProtocolKey;
 };
 
 const PERIODS = [
@@ -62,45 +74,47 @@ const PERIODS = [
 ];
 
 const QUESTIONS = [
-  "What is the average transaction size in USD for the past 24 hours?",
-  "Which services handled the most transactions today?",
-  "How much payment volume moved in the last 7 days?",
+  "Compare MPP and x402 transaction volume over the last 7 days.",
+  "What is the average x402 payment size in the past 24 hours?",
+  "Which services handled the most payments today?",
 ];
 
-const FALLBACK: ExplorerData = {
-  source: "Preview dataset",
+const EMPTY_PROTOCOL: ProtocolData = {
+  source: "Waiting for live data",
   live: false,
-  asOf: new Date().toISOString(),
+  disclosure: "No placeholder values are shown while live data loads.",
   periods: {
     "1": {
-      stats: {
-        totalTransactions: 26170,
-        totalVolume: 2470.91,
-        uniqueSenders: 5509,
-        uniqueRecipients: 125,
-      },
+      stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
     },
     "7": {
-      stats: {
-        totalTransactions: 149420,
-        totalVolume: 12782.4,
-        uniqueSenders: 17410,
-        uniqueRecipients: 182,
-      },
+      stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
     },
     "30": {
-      stats: {
-        totalTransactions: 573806,
-        totalVolume: 46704.55,
-        uniqueSenders: 39102,
-        uniqueRecipients: 246,
-      },
+      stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
     },
   },
   services: { "1": [], "7": [], "30": [] },
+};
+
+const FALLBACK: ExplorerData = {
+  source: "Connecting to public indexes",
+  live: false,
+  asOf: "",
+  protocols: {
+    all: EMPTY_PROTOCOL,
+    mpp: EMPTY_PROTOCOL,
+    x402: EMPTY_PROTOCOL,
+  },
+};
+
+const PROTOCOL_LABELS: Record<ProtocolKey, string> = {
+  all: "MPP + x402",
+  mpp: "MPP",
+  x402: "x402",
 };
 
 function compact(value: number) {
@@ -172,12 +186,33 @@ function getTimeframes(question: string): {
   return { primary, comparison };
 }
 
-function answerQuestion(data: ExplorerData, question: string): Answer {
+function protocolForQuestion(
+  question: string,
+  selected: ProtocolKey,
+): ProtocolKey {
   const text = question.toLowerCase();
+  const mentionsMpp = /\bmpp\b/.test(text);
+  const mentionsX402 = /\bx402\b|\b402\b/.test(text);
+  if (mentionsMpp && mentionsX402) return "all";
+  if (mentionsMpp) return "mpp";
+  if (mentionsX402) return "x402";
+  return selected;
+}
+
+function answerQuestion(
+  data: ExplorerData,
+  question: string,
+  selectedProtocol: ProtocolKey,
+): Answer {
+  const text = question.toLowerCase();
+  const protocol = protocolForQuestion(text, selectedProtocol);
+  const protocolData = data.protocols[protocol];
+  const protocolLabel = PROTOCOL_LABELS[protocol];
   const { primary: days, comparison: comparisonDays } = getTimeframes(text);
-  const current = data.periods[String(days) as "1" | "7" | "30"].stats;
+  const current =
+    protocolData.periods[String(days) as "1" | "7" | "30"].stats;
   const baseline = comparisonDays
-    ? data.periods[String(comparisonDays) as "1" | "7" | "30"].stats
+    ? protocolData.periods[String(comparisonDays) as "1" | "7" | "30"].stats
     : null;
   const periodLabel = days === 1 ? "past 24 hours" : `past ${days} days`;
   const comparisonLabel =
@@ -186,6 +221,44 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
       : comparisonDays
         ? `the aggregate ${comparisonDays}-day period`
         : null;
+
+  if (
+    protocol === "all" &&
+    /\bmpp\b/.test(text) &&
+    (/\bx402\b/.test(text) || /\b402\b/.test(text)) &&
+    (text.includes("compare") ||
+      text.includes("versus") ||
+      text.includes(" vs ") ||
+      text.includes("share"))
+  ) {
+    const mpp = data.protocols.mpp.periods[String(days) as "1" | "7" | "30"].stats;
+    const x402 = data.protocols.x402.periods[String(days) as "1" | "7" | "30"].stats;
+    const compareVolume =
+      text.includes("volume") ||
+      text.includes("usd") ||
+      text.includes("dollar") ||
+      text.includes("spend");
+    const mppValue = compareVolume ? mpp.totalVolume : mpp.totalTransactions;
+    const x402Value = compareVolume ? x402.totalVolume : x402.totalTransactions;
+    const total = mppValue + x402Value;
+    const leader = x402Value >= mppValue ? "x402" : "MPP";
+    const leaderValue = Math.max(x402Value, mppValue);
+    const share = total ? (leaderValue / total) * 100 : 0;
+    return {
+      eyebrow: `${compareVolume ? "Volume" : "Transaction"} share · ${periodLabel}`,
+      value: `${leader} ${share.toFixed(1)}%`,
+      change: null,
+      comparison: `${leader} leads observed ${compareVolume ? "USD volume" : "transactions"}`,
+      formula: compareVolume
+        ? `MPP ${usd(mppValue)} · x402 ${usd(x402Value)}`
+        : `MPP ${compact(mppValue)} · x402 ${compact(x402Value)}`,
+      explanation:
+        "Both protocols use the same date window. This comparison reflects their respective public indexes and documented coverage.",
+      days,
+      metric: compareVolume ? "volume" : "transactions",
+      protocol,
+    };
+  }
 
   if (
     (text.includes("average") || text.includes("avg") || text.includes("size")) &&
@@ -204,9 +277,10 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
         : "aggregate average for the selected period",
       formula: `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} transactions`,
       explanation:
-        "This is total USD payment volume divided by successful transactions. It measures payment size—not network fees or token transfers.",
+        `This is observed ${protocolLabel} USD payment volume divided by successful transactions. It measures payment size—not network fees or unrelated token transfers.`,
       days,
       metric: "average",
+      protocol,
     };
   }
 
@@ -229,6 +303,7 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
         "Each sender is counted once in the selected period, even if it made many payments.",
       days,
       metric: "buyers",
+      protocol,
     };
   }
 
@@ -238,7 +313,8 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
     text.includes("service")
   ) {
     const services =
-      data.services[String(days) as "1" | "7" | "30"] ?? data.services["1"];
+      protocolData.services[String(days) as "1" | "7" | "30"] ??
+      protocolData.services["1"];
     const top = services[0];
     if (
       top &&
@@ -259,6 +335,7 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
         explanation: `${top.name} ranks first by successful transactions in the selected period.`,
         days,
         metric: "transactions",
+        protocol,
       };
     }
 
@@ -276,9 +353,12 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
         : "active services in the selected period",
       formula: `${compact(current.uniqueRecipients)} distinct payment recipients`,
       explanation:
-        "This counts unique payment recipients with observed activity in the selected period.",
+        protocol === "all"
+          ? "This is the sum of active recipients reported by both protocol indexes. A recipient active on both may be counted twice."
+          : "This counts unique payment recipients with observed activity in the selected period.",
       days,
       metric: "servers",
+      protocol,
     };
   }
 
@@ -303,9 +383,10 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
         : "total observed volume in the selected period",
       formula: `${compact(current.totalTransactions)} payments settled in the period`,
       explanation:
-        "Volume is the total observed USD value of successful MPP payments in the selected period.",
+        `Volume is the total observed USD value of successful ${protocolLabel} payments in the selected period.`,
       days,
       metric: "volume",
+      protocol,
     };
   }
 
@@ -324,9 +405,10 @@ function answerQuestion(data: ExplorerData, question: string): Answer {
       : "total successful transactions in the selected period",
     formula: `${compact(Math.round(daily))} transactions per day`,
     explanation:
-      "This counts observed successful MPP payments across all indexed services.",
+      `This counts observed successful ${protocolLabel} payments across indexed services.`,
     days,
     metric: "transactions",
+    protocol,
   };
 }
 
@@ -416,9 +498,10 @@ function MetricCard({
 export default function Home() {
   const [data, setData] = useState<ExplorerData>(FALLBACK);
   const [loading, setLoading] = useState(true);
+  const [protocol, setProtocol] = useState<ProtocolKey>("all");
   const [period, setPeriod] = useState<1 | 7 | 30>(1);
   const [question, setQuestion] = useState(
-    "What is the average transaction size in USD for the past 24 hours and how has it changed in the last 30 days?",
+    "Compare MPP and x402 transaction volume over the last 7 days.",
   );
   const [submittedQuestion, setSubmittedQuestion] = useState(question);
   const [hasAsked, setHasAsked] = useState(false);
@@ -430,7 +513,7 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-    fetch("/api/mpp")
+    fetch("/api/network")
       .then((response) => {
         if (!response.ok) throw new Error("Data request failed");
         return response.json();
@@ -450,28 +533,37 @@ export default function Home() {
   }, []);
 
   const selectedKey = String(period) as "1" | "7" | "30";
-  const selected = data.periods[selectedKey];
+  const selectedProtocolData = data.protocols[protocol];
+  const selected = selectedProtocolData.periods[selectedKey];
   const answer = useMemo(
-    () => answerQuestion(data, submittedQuestion),
-    [data, submittedQuestion],
+    () => answerQuestion(data, submittedQuestion, protocol),
+    [data, submittedQuestion, protocol],
   );
   const answerBuckets =
-    data.periods[String(answer.days) as "1" | "7" | "30"].buckets;
+    data.protocols[answer.protocol].periods[
+      String(answer.days) as "1" | "7" | "30"
+    ].buckets;
   const sortedServices = useMemo(
     () =>
-      [...(data.services[selectedKey] ?? [])].sort(
+      [...(selectedProtocolData.services[selectedKey] ?? [])].sort(
         (a, b) => b.stats[sort] - a.stats[sort],
       ),
-    [data.services, selectedKey, sort],
+    [selectedProtocolData.services, selectedKey, sort],
   );
   const average = selected.stats.totalTransactions
     ? selected.stats.totalVolume / selected.stats.totalTransactions
     : 0;
+  const mppSelected = data.protocols.mpp.periods[selectedKey].stats;
+  const x402Selected = data.protocols.x402.periods[selectedKey].stats;
+  const combinedTransactions =
+    mppSelected.totalTransactions + x402Selected.totalTransactions;
+  const combinedVolume = mppSelected.totalVolume + x402Selected.totalVolume;
 
   function runQuestion(nextQuestion: string) {
     const trimmed = nextQuestion.trim();
     if (!trimmed) return;
     setSubmittedQuestion(trimmed);
+    setProtocol(protocolForQuestion(trimmed, protocol));
     setHasAsked(true);
     setAnswerRevision((revision) => revision + 1);
     setJustAnswered(true);
@@ -499,26 +591,51 @@ export default function Home() {
           <a href="#methodology">Methodology</a>
         </div>
         <div className="status">
-          <span className={data.live ? "liveDot" : "previewDot"} />
-          {loading ? "Connecting" : data.live ? "Live index" : "Preview mode"}
+          <span
+            className={selectedProtocolData.live ? "liveDot" : "previewDot"}
+          />
+          {loading
+            ? "Connecting"
+            : selectedProtocolData.live
+              ? "Live indexes"
+              : "Data unavailable"}
         </div>
       </nav>
+
+      <div className="protocolStrip" aria-label="Protocol view">
+        <div className="protocolTabs">
+          {(["all", "mpp", "x402"] as ProtocolKey[]).map((item) => (
+            <button
+              key={item}
+              className={protocol === item ? "active" : ""}
+              onClick={() => setProtocol(item)}
+              aria-pressed={protocol === item}
+            >
+              {item === "all" ? "All protocols" : item.toUpperCase()}
+            </button>
+          ))}
+        </div>
+        <p>
+          <span>{selectedProtocolData.live ? "Observed live" : "Unavailable"}</span>
+          {selectedProtocolData.disclosure}
+        </p>
+      </div>
 
       <section className="hero" id="top">
         <div className="heroCopy">
           <div className="kicker">
-            <span>Machine payments intelligence</span>
+            <span>Stablecoin payments intelligence</span>
             <i />
-            <span>MPP network</span>
+            <span>{PROTOCOL_LABELS[protocol]}</span>
           </div>
           <h1>
-            The machine economy,
+            Agent payments,
             <br />
-            <em>answered.</em>
+            <em>made legible.</em>
           </h1>
           <p>
-            Explore live agent-to-service payments, then ask the network a
-            question in plain English.
+            Explore observed MPP and x402 stablecoin activity, compare
+            protocols, and ask the data a question in plain English.
           </p>
           <a className="textLink" href="#pulse">
             Explore the live network <span>↓</span>
@@ -533,7 +650,7 @@ export default function Home() {
           </div>
           <form onSubmit={submitQuestion}>
             <label className="srOnly" htmlFor="network-question">
-              Ask a question about MPP network activity
+              Ask a question about MPP and x402 payment activity
             </label>
             <textarea
               id="network-question"
@@ -542,7 +659,7 @@ export default function Home() {
               rows={3}
             />
             <div className="queryActions">
-              <span>Try volume, agents, services, or average payment size</span>
+              <span>Try a protocol, metric, and time period</span>
               <button type="submit" aria-label="Ask question">
                 {justAnswered ? "Answered ✓" : "Ask"}{" "}
                 {!justAnswered && <span>↗</span>}
@@ -618,7 +735,7 @@ export default function Home() {
         <div className="sectionHeading">
           <div>
             <span className="sectionNumber">01 / Network pulse</span>
-            <h2>Activity at a glance</h2>
+            <h2>{PROTOCOL_LABELS[protocol]} at a glance</h2>
           </div>
           <div className="periodControl" aria-label="Time period">
             {PERIODS.map((item) => (
@@ -649,20 +766,76 @@ export default function Home() {
             metric="volume"
           />
           <MetricCard
-            label="Paying agents"
+            label={protocol === "all" ? "Observed buyers" : "Paying agents"}
             value={compact(selected.stats.uniqueSenders)}
-            note="Unique senders"
+            note={protocol === "all" ? "Protocol-level sum" : "Unique senders"}
             buckets={selected.buckets}
             metric="buyers"
           />
           <MetricCard
-            label="Active services"
+            label={protocol === "all" ? "Observed services" : "Active services"}
             value={compact(selected.stats.uniqueRecipients)}
-            note="Unique recipients"
+            note={protocol === "all" ? "Protocol-level sum" : "Unique recipients"}
             buckets={selected.buckets}
             metric="servers"
           />
         </div>
+
+        {protocol === "all" && (
+          <div className="protocolComparison">
+            <div className="comparisonHeading">
+              <div>
+                <span>Protocol share</span>
+                <strong>MPP vs x402</strong>
+              </div>
+              <small>Same {period === 1 ? "24-hour" : `${period}-day`} window</small>
+            </div>
+            <div className="shareRows">
+              <div className="shareRow">
+                <span>Transactions</span>
+                <div className="shareTrack" aria-hidden="true">
+                  <i
+                    className="shareMpp"
+                    style={{
+                      width: `${combinedTransactions ? (mppSelected.totalTransactions / combinedTransactions) * 100 : 0}%`,
+                    }}
+                  />
+                  <i
+                    className="shareX402"
+                    style={{
+                      width: `${combinedTransactions ? (x402Selected.totalTransactions / combinedTransactions) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+                <b>
+                  MPP {compact(mppSelected.totalTransactions)} · x402{" "}
+                  {compact(x402Selected.totalTransactions)}
+                </b>
+              </div>
+              <div className="shareRow">
+                <span>USD volume</span>
+                <div className="shareTrack" aria-hidden="true">
+                  <i
+                    className="shareMpp"
+                    style={{
+                      width: `${combinedVolume ? (mppSelected.totalVolume / combinedVolume) * 100 : 0}%`,
+                    }}
+                  />
+                  <i
+                    className="shareX402"
+                    style={{
+                      width: `${combinedVolume ? (x402Selected.totalVolume / combinedVolume) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+                <b>
+                  MPP {usd(mppSelected.totalVolume)} · x402{" "}
+                  {usd(x402Selected.totalVolume)}
+                </b>
+              </div>
+            </div>
+          </div>
+        )}
 
         <div className="activityGrid">
           <article className="activityPanel">
@@ -717,7 +890,7 @@ export default function Home() {
         <div className="sectionHeading">
           <div>
             <span className="sectionNumber">02 / Service economy</span>
-            <h2>Where agents spend</h2>
+            <h2>Where {PROTOCOL_LABELS[protocol]} agents spend</h2>
           </div>
           <p className="sectionIntro">
             Ranked by observed activity in the selected period.
@@ -774,6 +947,9 @@ export default function Home() {
                       >
                         {service.name} ↗
                       </a>
+                      <span className={`serviceBadge ${service.protocol}`}>
+                        {service.protocol.toUpperCase()} · {service.network}
+                      </span>
                       <small>{service.description}</small>
                     </span>
                   </td>
@@ -821,16 +997,16 @@ export default function Home() {
             <span>01</span>
             <h3>Observe</h3>
             <p>
-              Read-only network aggregates and service rankings are refreshed
-              from the MPPScan public analytics index.
+              Read-only aggregates and service rankings are refreshed from the
+              MPPScan and x402scan public analytics indexes.
             </p>
           </article>
           <article>
             <span>02</span>
             <h3>Compute</h3>
             <p>
-              Questions map to a metric, time window, and comparison. Every
-              result includes its formula.
+              Questions map to a protocol, metric, time window, and comparison.
+              Every result includes its formula.
             </p>
           </article>
           <article>
@@ -838,7 +1014,7 @@ export default function Home() {
             <h3>Explain</h3>
             <p>
               The answer distinguishes totals, daily run-rates, unique actors,
-              and per-transaction averages.
+              per-transaction averages, and cross-protocol coverage limits.
             </p>
           </article>
         </div>
@@ -853,18 +1029,19 @@ export default function Home() {
           <span>BLOCKSCOPE</span>
         </a>
         <p>
-          Independent interface powered by{" "}
+          Independent interface using public analytics from{" "}
           <a href="https://mppscan.com" target="_blank" rel="noreferrer">
             MPPScan
           </a>{" "}
-          public analytics. Not affiliated with MPPScan.
+          and{" "}
+          <a href="https://www.x402scan.com" target="_blank" rel="noreferrer">
+            x402scan
+          </a>
+          . Not affiliated with either index.
         </p>
         <span>
           Updated{" "}
-          {new Date(data.asOf).toLocaleTimeString("en-US", {
-            hour: "numeric",
-            minute: "2-digit",
-          })}
+          {data.asOf ? `${data.asOf.slice(11, 16)} UTC` : "when data connects"}
         </span>
       </footer>
     </main>
