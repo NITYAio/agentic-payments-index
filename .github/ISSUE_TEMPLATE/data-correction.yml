@@ -1,0 +1,53 @@
+name: Data correction
+description: Report a reproducible discrepancy in a metric, service record, or source mapping.
+title: "[Data]: "
+labels:
+  - data
+  - needs-verification
+body:
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options:
+        - MPP
+        - x402
+        - Combined view
+        - Other
+    validations:
+      required: true
+  - type: input
+    id: metric
+    attributes:
+      label: Metric or service
+      placeholder: Average payment size, transaction volume, example.com
+    validations:
+      required: true
+  - type: input
+    id: window
+    attributes:
+      label: UTC time window and as-of time
+      placeholder: 30 days, observed 2026-07-30 21:00 UTC
+    validations:
+      required: true
+  - type: textarea
+    id: observed
+    attributes:
+      label: Observed result
+      description: Include the index URL or API request and the value shown.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected result and evidence
+      description: Link the public upstream source or transaction evidence and explain the discrepancy.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety
+      options:
+        - label: I have not included private keys, credentials, or personal customer data.
+          required: true

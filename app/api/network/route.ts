@@ -131,7 +131,10 @@ async function getMppPeriod(days: 1 | 7 | 30) {
   const response = await fetch(
     `${MPP_UPSTREAM}/stats.protocolStats,stats.bucketed?batch=1&input=${input}`,
     {
-      headers: { accept: "application/json", "x-trpc-source": "blockscope" },
+      headers: {
+        accept: "application/json",
+        "x-trpc-source": "agentic-payments-index",
+      },
     },
   );
   if (!response.ok) throw new Error(`MPP stats returned ${response.status}`);
@@ -160,7 +163,10 @@ async function getMppServices(days: 1 | 7 | 30) {
       }),
     )}`,
     {
-      headers: { accept: "application/json", "x-trpc-source": "blockscope" },
+      headers: {
+        accept: "application/json",
+        "x-trpc-source": "agentic-payments-index",
+      },
     },
   );
   if (!response.ok) throw new Error(`MPP services returned ${response.status}`);
@@ -207,7 +213,10 @@ async function getX402Period(days: 1 | 7 | 30) {
       ],
     )}`,
     {
-      headers: { accept: "application/json", "x-trpc-source": "blockscope" },
+      headers: {
+        accept: "application/json",
+        "x-trpc-source": "agentic-payments-index",
+      },
     },
   );
   if (!response.ok) throw new Error(`x402 stats returned ${response.status}`);
@@ -256,7 +265,10 @@ async function getX402Services(days: 1 | 7 | 30) {
       pagination: { page: 0, page_size: 12 },
     })}`,
     {
-      headers: { accept: "application/json", "x-trpc-source": "blockscope" },
+      headers: {
+        accept: "application/json",
+        "x-trpc-source": "agentic-payments-index",
+      },
     },
   );
   if (!response.ok) throw new Error(`x402 services returned ${response.status}`);

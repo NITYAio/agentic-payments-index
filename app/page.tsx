@@ -55,6 +55,20 @@ type ExplorerData = {
   protocols: Record<ProtocolKey, ProtocolData>;
 };
 
+type DirectoryData = {
+  items: Service[];
+  total: number;
+  totalPages: number;
+  page: number;
+  pageSize: number;
+  sourceTotals: {
+    mpp: number;
+    x402: number;
+  };
+  disclosure: string;
+  asOf: string;
+};
+
 type Answer = {
   eyebrow: string;
   value: string;
@@ -65,6 +79,7 @@ type Answer = {
   days: 1 | 7 | 30;
   metric: "average" | "volume" | "transactions" | "buyers" | "servers";
   protocol: ProtocolKey;
+  limited?: boolean;
 };
 
 const PERIODS = [
@@ -109,6 +124,17 @@ const FALLBACK: ExplorerData = {
     mpp: EMPTY_PROTOCOL,
     x402: EMPTY_PROTOCOL,
   },
+};
+
+const EMPTY_DIRECTORY: DirectoryData = {
+  items: [],
+  total: 0,
+  totalPages: 1,
+  page: 1,
+  pageSize: 20,
+  sourceTotals: { mpp: 0, x402: 0 },
+  disclosure: "Connecting to the public service indexes.",
+  asOf: "",
 };
 
 const PROTOCOL_LABELS: Record<ProtocolKey, string> = {
@@ -221,6 +247,22 @@ function answerQuestion(
       : comparisonDays
         ? `the aggregate ${comparisonDays}-day period`
         : null;
+
+  if (/\b(previous|prior|preceding)\b/.test(text)) {
+    return {
+      eyebrow: "Coverage-limited comparison",
+      value: "Not computed",
+      change: null,
+      comparison: "A non-overlapping prior-period series is not exposed by the current aggregate feeds.",
+      formula: "Requires daily source rows for both complete periods",
+      explanation:
+        "The index will not substitute an overlapping rolling average. Ask for a 24h, 7d, or 30d aggregate comparison, or inspect the displayed time series while historical period storage is added.",
+      days,
+      metric: "transactions",
+      protocol,
+      limited: true,
+    };
+  }
 
   if (
     protocol === "all" &&
@@ -340,7 +382,7 @@ function answerQuestion(
     }
 
     return {
-      eyebrow: `Active services · ${periodLabel}`,
+      eyebrow: `Observed payment recipients · ${periodLabel}`,
       value: compact(current.uniqueRecipients),
       change: baseline
         ? percentageDelta(
@@ -349,13 +391,13 @@ function answerQuestion(
           )
         : null,
       comparison: comparisonLabel
-        ? `vs services seen across ${comparisonLabel}`
-        : "active services in the selected period",
+        ? `vs recipient identities seen across ${comparisonLabel}`
+        : "recipient identities in the selected period",
       formula: `${compact(current.uniqueRecipients)} distinct payment recipients`,
       explanation:
         protocol === "all"
-          ? "This is the sum of active recipients reported by both protocol indexes. A recipient active on both may be counted twice."
-          : "This counts unique payment recipients with observed activity in the selected period.",
+          ? "This is the sum of recipient identities reported by both protocol indexes. It is not a count of resolved services or companies, and a recipient active on both may be counted twice."
+          : "This counts distinct payment recipients with observed activity, not the smaller directory of resolved service origins.",
       days,
       metric: "servers",
       protocol,
@@ -495,11 +537,45 @@ function MetricCard({
   );
 }
 
+function paginationWindow(current: number, total: number) {
+  const pages = new Set<number>([1, total, current - 1, current, current + 1]);
+  return [...pages]
+    .filter((page) => page >= 1 && page <= total)
+    .sort((left, right) => left - right);
+}
+
+function ViewToggle({
+  machineMode,
+  onChange,
+}: {
+  machineMode: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="viewToggle" aria-label="Choose human or machine view">
+      <button
+        className={!machineMode ? "active" : ""}
+        onClick={() => onChange(false)}
+        aria-pressed={!machineMode}
+      >
+        Human
+      </button>
+      <button
+        className={machineMode ? "active" : ""}
+        onClick={() => onChange(true)}
+        aria-pressed={machineMode}
+      >
+        Machine
+      </button>
+    </div>
+  );
+}
+
 export default function Home() {
   const [data, setData] = useState<ExplorerData>(FALLBACK);
   const [loading, setLoading] = useState(true);
   const [protocol, setProtocol] = useState<ProtocolKey>("all");
-  const [period, setPeriod] = useState<1 | 7 | 30>(1);
+  const [period, setPeriod] = useState<1 | 7 | 30>(30);
   const [question, setQuestion] = useState(
     "Compare MPP and x402 transaction volume over the last 7 days.",
   );
@@ -510,6 +586,12 @@ export default function Home() {
   const [sort, setSort] = useState<"transactions" | "volume" | "buyers">(
     "transactions",
   );
+  const [directory, setDirectory] =
+    useState<DirectoryData>(EMPTY_DIRECTORY);
+  const [directoryLoading, setDirectoryLoading] = useState(true);
+  const [directoryError, setDirectoryError] = useState("");
+  const [servicePage, setServicePage] = useState(1);
+  const [machineMode, setMachineMode] = useState(false);
 
   useEffect(() => {
     let active = true;
@@ -532,6 +614,40 @@ export default function Home() {
     };
   }, []);
 
+  useEffect(() => {
+    let active = true;
+    setDirectoryLoading(true);
+    setDirectoryError("");
+    const parameters = new URLSearchParams({
+      protocol,
+      days: String(period),
+      page: String(servicePage),
+      pageSize: "20",
+      sort,
+    });
+    fetch(`/api/services?${parameters.toString()}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Directory request failed");
+        return response.json();
+      })
+      .then((nextDirectory: DirectoryData) => {
+        if (active) setDirectory(nextDirectory);
+      })
+      .catch(() => {
+        if (active) {
+          setDirectoryError(
+            "The complete service directory is temporarily unavailable.",
+          );
+        }
+      })
+      .finally(() => {
+        if (active) setDirectoryLoading(false);
+      });
+    return () => {
+      active = false;
+    };
+  }, [period, protocol, servicePage, sort]);
+
   const selectedKey = String(period) as "1" | "7" | "30";
   const selectedProtocolData = data.protocols[protocol];
   const selected = selectedProtocolData.periods[selectedKey];
@@ -543,13 +659,6 @@ export default function Home() {
     data.protocols[answer.protocol].periods[
       String(answer.days) as "1" | "7" | "30"
     ].buckets;
-  const sortedServices = useMemo(
-    () =>
-      [...(selectedProtocolData.services[selectedKey] ?? [])].sort(
-        (a, b) => b.stats[sort] - a.stats[sort],
-      ),
-    [selectedProtocolData.services, selectedKey, sort],
-  );
   const average = selected.stats.totalTransactions
     ? selected.stats.totalVolume / selected.stats.totalTransactions
     : 0;
@@ -575,19 +684,135 @@ export default function Home() {
     runQuestion(question);
   }
 
+  if (machineMode) {
+    const machinePayload = {
+      index: "the-agentic-payments-index",
+      schemaVersion: "0.2.0",
+      asOf: data.asOf || null,
+      selectedView: {
+        protocol,
+        windowDays: period,
+        stats: selected.stats,
+      },
+      coverage: {
+        indexedServiceRecords: directory.total,
+        mppResolvedOrigins: directory.sourceTotals.mpp,
+        x402BazaarOrigins: directory.sourceTotals.x402,
+        caveat: directory.disclosure,
+      },
+      provenance: {
+        mpp: data.protocols.mpp.source,
+        x402: data.protocols.x402.source,
+        adjustmentStatus:
+          "Raw observed activity. Quality-adjusted classification is not yet applied.",
+      },
+      endpoints: {
+        network: "/api/network",
+        directory:
+          `/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}`,
+        manifest: "/api/agent",
+      },
+    };
+
+    return (
+      <main className="machineShell">
+        <nav className="machineTopbar">
+          <a className="brand" href="#machine-top">
+            <span className="brandMark" aria-hidden="true">
+              <i />
+              <i />
+            </span>
+            <span>THE AGENTIC PAYMENTS INDEX</span>
+          </a>
+          <span>application/json · read-only · public</span>
+        </nav>
+        <section className="machineHero" id="machine-top">
+          <div className="machineIntro">
+            <span className="sectionNumber">Machine-readable view</span>
+            <h1>
+              One index.
+              <br />
+              Explicit evidence.
+            </h1>
+            <p>
+              This is the same public observation layer exposed to software:
+              stable fields, declared sources, visible freshness, and coverage
+              limits that travel with the number.
+            </p>
+            <div className="machineEndpointList">
+              <a href="/api/network" target="_blank">
+                GET /api/network <span>↗</span>
+              </a>
+              <a
+                href={`/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}`}
+                target="_blank"
+              >
+                GET /api/services <span>↗</span>
+              </a>
+              <a href="/api/agent" target="_blank">
+                GET /api/agent <span>↗</span>
+              </a>
+            </div>
+          </div>
+          <div className="machineConsole">
+            <div className="machineConsoleHead">
+              <span>index.snapshot.json</span>
+              <span className={data.live ? "machineHealthy" : ""}>
+                {data.live ? "200 OK" : "503 SOURCE UNAVAILABLE"}
+              </span>
+            </div>
+            <pre>{JSON.stringify(machinePayload, null, 2)}</pre>
+          </div>
+        </section>
+        <section className="machineSchema">
+          <article>
+            <span>01 / Observe</span>
+            <strong>Raw activity</strong>
+            <p>Protocol-native transactions, value, actors, and timestamps.</p>
+          </article>
+          <article>
+            <span>02 / Resolve</span>
+            <strong>Service records</strong>
+            <p>Paginated origins remain distinct from raw recipient counts.</p>
+          </article>
+          <article>
+            <span>03 / Qualify</span>
+            <strong>Adjustment state</strong>
+            <p>Unadjusted metrics are labelled until confidence rules ship.</p>
+          </article>
+          <article>
+            <span>04 / Cite</span>
+            <strong>Provenance</strong>
+            <p>Source, formula, window, freshness, and limitations travel together.</p>
+          </article>
+        </section>
+        <footer className="machineFooter">
+          <span>Built for agents, analysts, and reproducible research.</span>
+          <span>{data.asOf ? `Snapshot ${data.asOf}` : "Connecting"}</span>
+        </footer>
+        <ViewToggle machineMode onChange={setMachineMode} />
+      </main>
+    );
+  }
+
   return (
     <main>
       <nav className="topbar" aria-label="Primary navigation">
-        <a className="brand" href="#top" aria-label="Blockscope home">
+        <a
+          className="brand"
+          href="#top"
+          aria-label="The Agentic Payments Index home"
+        >
           <span className="brandMark" aria-hidden="true">
             <i />
             <i />
           </span>
-          <span>BLOCKSCOPE</span>
+          <span>THE AGENTIC PAYMENTS INDEX</span>
         </a>
         <div className="navLinks">
           <a href="#pulse">Network</a>
           <a href="#services">Services</a>
+          <a href="#evidence">Evidence</a>
           <a href="#methodology">Methodology</a>
         </div>
         <div className="status">
@@ -608,7 +833,10 @@ export default function Home() {
             <button
               key={item}
               className={protocol === item ? "active" : ""}
-              onClick={() => setProtocol(item)}
+              onClick={() => {
+                setProtocol(item);
+                setServicePage(1);
+              }}
               aria-pressed={protocol === item}
             >
               {item === "all" ? "All protocols" : item.toUpperCase()}
@@ -629,13 +857,14 @@ export default function Home() {
             <span>{PROTOCOL_LABELS[protocol]}</span>
           </div>
           <h1>
-            Agent payments,
+            Agentic GDP,
             <br />
             <em>made legible.</em>
           </h1>
           <p>
-            Explore observed MPP and x402 stablecoin activity, compare
-            protocols, and ask the data a question in plain English.
+            The open evidence layer for machine-native stablecoin payments.
+            Explore every indexed service, compare MPP and x402, and interrogate
+            the market in plain English.
           </p>
           <a className="textLink" href="#pulse">
             Explore the live network <span>↓</span>
@@ -645,7 +874,7 @@ export default function Home() {
         <aside className="queryPanel" aria-label="Ask the data">
           <div className="queryLabel">
             <span className="spark">✦</span>
-            Ask Blockscope
+            Ask the Index
             <span className="queryMode">Computed from live data</span>
           </div>
           <form onSubmit={submitQuestion}>
@@ -687,7 +916,11 @@ export default function Home() {
             >
               <div className="answerHead">
                 <span>{answer.eyebrow}</span>
-                <span className="verified">Verified calculation</span>
+                <span className={answer.limited ? "coverageLimited" : "verified"}>
+                  {answer.limited
+                    ? "Coverage limit disclosed"
+                    : "Verified calculation"}
+                </span>
               </div>
               <div className="answerValueRow">
                 <strong>{answer.value}</strong>
@@ -742,7 +975,10 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
-                onClick={() => setPeriod(item.days)}
+                onClick={() => {
+                  setPeriod(item.days);
+                  setServicePage(1);
+                }}
               >
                 {item.label}
               </button>
@@ -773,9 +1009,17 @@ export default function Home() {
             metric="buyers"
           />
           <MetricCard
-            label={protocol === "all" ? "Observed services" : "Active services"}
+            label={
+              protocol === "all"
+                ? "Observed recipients"
+                : "Payment recipients"
+            }
             value={compact(selected.stats.uniqueRecipients)}
-            note={protocol === "all" ? "Protocol-level sum" : "Unique recipients"}
+            note={
+              protocol === "all"
+                ? "Protocol-level sum; not companies"
+                : "Unique recipient identities"
+            }
             buckets={selected.buckets}
             metric="servers"
           />
@@ -886,14 +1130,87 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="section evidenceSection" id="evidence">
+        <div className="evidenceLead">
+          <span className="sectionNumber">02 / Evidence state</span>
+          <h2>Raw activity is not the same as real adoption.</h2>
+          <p>
+            Every view states what was observed, what has been resolved to a
+            service, and which quality adjustments have—or have not—been
+            applied. We would rather publish a smaller defensible number than a
+            larger ambiguous one.
+          </p>
+        </div>
+        <div className="evidenceGrid">
+          <article>
+            <span className="evidenceState liveEvidence">Live</span>
+            <small>Observed settlement layer</small>
+            <strong>{compact(selected.stats.totalTransactions)}</strong>
+            <p>
+              Successful protocol-indexed transactions in the selected window.
+            </p>
+          </article>
+          <article>
+            <span className="evidenceState resolvedEvidence">Resolved</span>
+            <small>Queryable service directory</small>
+            <strong>
+              {directoryLoading ? "…" : compact(directory.total)}
+            </strong>
+            <p>
+              Protocol-level service records available across every directory
+              page—not raw recipient identities.
+            </p>
+          </article>
+          <article>
+            <span className="evidenceState betaEvidence">Methodology beta</span>
+            <small>Quality adjustment</small>
+            <strong>Unadjusted</strong>
+            <p>
+              Current totals still include testing, internal activity, and
+              unresolved counterparties. The classification model will publish
+              confidence ranges rather than silent exclusions.
+            </p>
+          </article>
+        </div>
+      </section>
+
       <section className="section servicesSection" id="services">
         <div className="sectionHeading">
           <div>
-            <span className="sectionNumber">02 / Service economy</span>
+            <span className="sectionNumber">03 / Service economy</span>
             <h2>Where {PROTOCOL_LABELS[protocol]} agents spend</h2>
           </div>
           <p className="sectionIntro">
-            Ranked by observed activity in the selected period.
+            Complete source-backed pagination, ranked by observed activity in
+            the selected period.
+          </p>
+        </div>
+
+        <div className="directorySummary">
+          <div>
+            <span>Indexed service records</span>
+            <strong>
+              {directoryLoading && !directory.total
+                ? "Connecting"
+                : compact(directory.total)}
+            </strong>
+          </div>
+          <dl>
+            <div>
+              <dt>MPP origins</dt>
+              <dd>{compact(directory.sourceTotals.mpp)}</dd>
+            </div>
+            <div>
+              <dt>x402 origins</dt>
+              <dd>{compact(directory.sourceTotals.x402)}</dd>
+            </div>
+            <div>
+              <dt>Window</dt>
+              <dd>{period === 1 ? "24 hours" : `${period} days`}</dd>
+            </div>
+          </dl>
+          <p>
+            {directoryError || directory.disclosure}
           </p>
         </div>
 
@@ -905,7 +1222,10 @@ export default function Home() {
                 <th>
                   <button
                     className={sort === "transactions" ? "sortActive" : ""}
-                    onClick={() => setSort("transactions")}
+                    onClick={() => {
+                      setSort("transactions");
+                      setServicePage(1);
+                    }}
                   >
                     Transactions {sort === "transactions" ? "↓" : ""}
                   </button>
@@ -913,7 +1233,10 @@ export default function Home() {
                 <th>
                   <button
                     className={sort === "volume" ? "sortActive" : ""}
-                    onClick={() => setSort("volume")}
+                    onClick={() => {
+                      setSort("volume");
+                      setServicePage(1);
+                    }}
                   >
                     Volume {sort === "volume" ? "↓" : ""}
                   </button>
@@ -921,7 +1244,10 @@ export default function Home() {
                 <th>
                   <button
                     className={sort === "buyers" ? "sortActive" : ""}
-                    onClick={() => setSort("buyers")}
+                    onClick={() => {
+                      setSort("buyers");
+                      setServicePage(1);
+                    }}
                   >
                     Agents {sort === "buyers" ? "↓" : ""}
                   </button>
@@ -930,11 +1256,11 @@ export default function Home() {
               </tr>
             </thead>
             <tbody>
-              {sortedServices.slice(0, 10).map((service, index) => (
-                <tr key={service.id}>
+              {directory.items.map((service) => (
+                <tr key={`${service.protocol}-${service.id}`}>
                   <td>
                     <span className="rank">
-                      {String(index + 1).padStart(2, "0")}
+                      {String(service.rank).padStart(2, "0")}
                     </span>
                     <span className="serviceIcon">
                       {service.name.slice(0, 2).toUpperCase()}
@@ -959,7 +1285,8 @@ export default function Home() {
                   <td className="latest">{relativeTime(service.stats.latestTx)}</td>
                 </tr>
               ))}
-              {!sortedServices.length &&
+              {directoryLoading &&
+                !directory.items.length &&
                 ["ATXP", "2Captcha", "AIsa", "Exa", "Parallel"].map(
                   (name, index) => (
                     <tr className="placeholderRow" key={name}>
@@ -982,39 +1309,97 @@ export default function Home() {
                     </tr>
                   ),
                 )}
+              {!directoryLoading && directoryError && (
+                <tr className="directoryErrorRow">
+                  <td colSpan={5}>{directoryError}</td>
+                </tr>
+              )}
             </tbody>
           </table>
+        </div>
+
+        <div className="pagination">
+          <button
+            onClick={() =>
+              setServicePage((current) => Math.max(1, current - 1))
+            }
+            disabled={servicePage <= 1 || directoryLoading}
+          >
+            ← Previous
+          </button>
+          <div className="pageNumbers" aria-label="Service directory pages">
+            {paginationWindow(servicePage, directory.totalPages).map(
+              (pageNumber, index, pages) => [
+                index > 0 && pageNumber - pages[index - 1] > 1 ? (
+                  <span key={`gap-${pageNumber}`}>…</span>
+                ) : null,
+                <button
+                  key={pageNumber}
+                  className={pageNumber === servicePage ? "active" : ""}
+                  onClick={() => setServicePage(pageNumber)}
+                  disabled={directoryLoading}
+                  aria-current={pageNumber === servicePage ? "page" : undefined}
+                >
+                  {pageNumber}
+                </button>,
+              ],
+            )}
+          </div>
+          <button
+            onClick={() =>
+              setServicePage((current) =>
+                Math.min(directory.totalPages, current + 1),
+              )
+            }
+            disabled={
+              servicePage >= directory.totalPages || directoryLoading
+            }
+          >
+            Next →
+          </button>
+          <span>
+            Page {servicePage} of {directory.totalPages}
+          </span>
         </div>
       </section>
 
       <section className="methodology" id="methodology">
         <div>
-          <span className="sectionNumber">03 / Methodology</span>
-          <h2>Answers you can audit.</h2>
+          <span className="sectionNumber">04 / Methodology</span>
+          <h2>Evidence you can audit.</h2>
         </div>
         <div className="methodGrid">
           <article>
             <span>01</span>
             <h3>Observe</h3>
             <p>
-              Read-only aggregates and service rankings are refreshed from the
-              MPPScan and x402scan public analytics indexes.
+              Read-only payment aggregates and source-native time series are
+              refreshed from the MPPScan and x402scan public indexes.
             </p>
           </article>
           <article>
             <span>02</span>
-            <h3>Compute</h3>
+            <h3>Resolve</h3>
             <p>
-              Questions map to a protocol, metric, time window, and comparison.
-              Every result includes its formula.
+              Raw recipients remain distinct from named service origins.
+              Complete pagination and source totals make that coverage visible.
             </p>
           </article>
           <article>
             <span>03</span>
+            <h3>Qualify</h3>
+            <p>
+              Raw, resolved, and quality-adjusted states are labelled
+              separately. No organic-activity claim is made before the
+              confidence model is published.
+            </p>
+          </article>
+          <article>
+            <span>04</span>
             <h3>Explain</h3>
             <p>
-              The answer distinguishes totals, daily run-rates, unique actors,
-              per-transaction averages, and cross-protocol coverage limits.
+              Every computed answer carries its metric, time window, formula,
+              source, and the limitation that changes how it should be read.
             </p>
           </article>
         </div>
@@ -1026,10 +1411,10 @@ export default function Home() {
             <i />
             <i />
           </span>
-          <span>BLOCKSCOPE</span>
+          <span>THE AGENTIC PAYMENTS INDEX</span>
         </a>
         <p>
-          Independent interface using public analytics from{" "}
+          Independent, open evidence layer using public analytics from{" "}
           <a href="https://mppscan.com" target="_blank" rel="noreferrer">
             MPPScan
           </a>{" "}
@@ -1044,6 +1429,7 @@ export default function Home() {
           {data.asOf ? `${data.asOf.slice(11, 16)} UTC` : "when data connects"}
         </span>
       </footer>
+      <ViewToggle machineMode={false} onChange={setMachineMode} />
     </main>
   );
 }

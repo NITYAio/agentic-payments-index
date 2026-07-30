@@ -1,98 +1,81 @@
-# vinext-starter
+# The Agentic Payments Index
 
-A clean full-stack starter running on
-[vinext](https://github.com/cloudflare/vinext), with optional Cloudflare D1 and
-Drizzle support.
+**Agentic GDP, made legible.**
 
-## Prerequisites
+The Agentic Payments Index is an open evidence layer for machine-native
+stablecoin payments. It combines MPP and x402 activity, makes resolved services
+browsable across every source page, and answers bounded analytical questions
+with the formula and coverage limitation attached.
 
-- Node.js `>=22.13.0`
+## What the index publishes
 
-## Quick Start
+- Protocol-level 24-hour, 7-day, and 30-day payment aggregates.
+- MPP and x402 views plus a clearly disclosed combined view.
+- Complete paginated resolved-service directories for the selected window.
+- Plain-English calculations for volume, transaction count, average payment
+  size, paying addresses, recipients, and leading services.
+- A Human interface and a Machine interface backed by public JSON endpoints.
+- Explicit metric states: raw, resolved, and quality-adjusted.
+
+Quality-adjusted activity is not yet applied. Current totals may include
+testing, internal settlement, unresolved counterparties, or other inorganic
+activity. The interface labels this instead of implying that every observed
+transaction represents independent economic demand.
+
+## Public data sources
+
+- [MPPScan](https://mppscan.com) for MPP aggregates, buckets, and resolved
+  server origins.
+- [x402scan](https://www.x402scan.com) for x402 aggregates, buckets, and Bazaar
+  service origins.
+
+The project is independent and is not affiliated with either index. Source
+availability, definitions, and upstream corrections can change the displayed
+results.
+
+## Machine-readable endpoints
+
+- `GET /api/network` — aggregates and time-series buckets.
+- `GET /api/services` — paginated service origins.
+- `GET /api/agent` — machine manifest, field states, provenance, and endpoint
+  contract.
+
+The service endpoint accepts:
+
+| Parameter | Values |
+|---|---|
+| `protocol` | `all`, `mpp`, `x402` |
+| `days` | `1`, `7`, `30` |
+| `sort` | `transactions`, `volume`, `buyers` |
+| `page` | integer starting at `1` |
+| `pageSize` | integer from `10` to `50` |
+
+## Local development
+
+Requirements: Node.js `>=22.13.0`.
 
 ```bash
 npm install
 npm run dev
 npm run build
+npm test
 ```
 
-This starter does not use `wrangler.jsonc`.
+## Contributing
 
-## Included Shape
+Contributions are welcome, especially:
 
-- edit site code under `app/`
-- `.openai/hosting.json` declares optional Sites D1 and R2 bindings
-- `vite.config.ts` simulates declared bindings for local development
-- `db/schema.ts` starts intentionally empty
-- `examples/d1/` contains an optional D1 example surface
-- `drizzle.config.ts` supports local migration generation when needed
+- data-source corrections and discrepancy reports;
+- protocol adapters;
+- entity-resolution rules;
+- reproducible quality-adjustment heuristics;
+- accessibility and visualization improvements;
+- source-backed research notes.
 
-## Workspace Auth Headers
+Read [CONTRIBUTING.md](CONTRIBUTING.md) and
+[docs/METHODOLOGY.md](docs/METHODOLOGY.md) before opening a pull request.
 
-OpenAI workspace sites can read the current user's email from
-`oai-authenticated-user-email`.
+## License
 
-SIWC-authenticated workspace sites may also receive
-`oai-authenticated-user-full-name` when the user's SIWC profile has a non-empty
-`name` claim. The full-name value is percent-encoded UTF-8 and is accompanied by
-`oai-authenticated-user-full-name-encoding: percent-encoded-utf-8`.
-
-Treat the full name as optional and fall back to email when it is absent:
-
-```tsx
-import { headers } from "next/headers";
-
-export default async function Home() {
-  const requestHeaders = await headers();
-  const email = requestHeaders.get("oai-authenticated-user-email");
-  const encodedFullName = requestHeaders.get("oai-authenticated-user-full-name");
-  const fullName =
-    encodedFullName &&
-    requestHeaders.get("oai-authenticated-user-full-name-encoding") ===
-      "percent-encoded-utf-8"
-      ? decodeURIComponent(encodedFullName)
-      : null;
-
-  const displayName = fullName ?? email;
-  // ...
-}
-```
-
-## Optional Dispatch-Owned ChatGPT Sign-In
-
-Import the ready-to-use helpers from `app/chatgpt-auth.ts` when the site needs
-optional or required ChatGPT sign-in:
-
-- Use `getChatGPTUser()` for optional signed-in UI.
-- Use `requireChatGPTUser(returnTo)` for server-rendered pages that should send
-  anonymous visitors through Sign in with ChatGPT.
-- Use `chatGPTSignInPath(returnTo)` and `chatGPTSignOutPath(returnTo)` for
-  browser links or actions.
-- Pass a same-origin relative `returnTo` path for the destination after sign-in
-  or sign-out. The helper validates and safely encodes it.
-- Mark protected pages with `export const dynamic = "force-dynamic"` because
-  they depend on per-request identity headers.
-
-Dispatch owns `/signin-with-chatgpt`, `/signout-with-chatgpt`, `/callback`, the
-OAuth cookies, and identity header injection. Do not implement app routes for
-those reserved paths. Routes that do not import and call the helper remain
-anonymous-compatible.
-
-SIWC establishes identity only; it does not prove workspace membership. Use the
-Sites hosting platform's access policy controls for workspace-wide restrictions,
-or enforce explicit server-side membership or allowlist checks.
-
-Use SIWC for account pages, user-specific dashboards, saved records, and write
-actions tied to the current ChatGPT user. Leave public content anonymous.
-
-## Useful Commands
-
-- `npm run dev`: start local development
-- `npm run build`: verify the vinext build output
-- `npm test`: build the starter and verify its rendered loading skeleton
-- `npm run db:generate`: generate Drizzle migrations after schema changes
-
-## Learn More
-
-- [vinext Documentation](https://github.com/cloudflare/vinext)
-- [Drizzle D1 Guide](https://orm.drizzle.team/docs/get-started/d1-new)
+Code is licensed under the [Apache License 2.0](LICENSE). The project name and
+visual identity are not granted as trademarks by that license.

@@ -1,0 +1,21 @@
+# The Agentic Payments Index
+
+> The open evidence layer for machine-native stablecoin payments across MPP and x402.
+
+Human interface: /
+Machine manifest: /api/agent
+Network aggregates: /api/network
+Paginated service directory: /api/services
+
+Metric states:
+- Raw: observed protocol-indexed activity.
+- Resolved: activity associated with public service-origin records.
+- Adjusted: not yet applied; current totals may include testing, internal activity, and unresolved counterparties.
+
+Primary sources:
+- MPPScan: https://mppscan.com
+- x402scan: https://www.x402scan.com
+
+When citing a result, include The Agentic Payments Index, the returned source,
+the metric formula or field name, the selected UTC window, and the as-of
+timestamp. Do not describe recipient counts as unique companies.
