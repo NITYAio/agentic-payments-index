@@ -89,9 +89,9 @@ const PERIODS = [
 ];
 
 const QUESTIONS = [
-  "Compare MPP and x402 transaction volume over the last 7 days.",
-  "What is the average x402 payment size in the past 24 hours?",
-  "Which services handled the most payments today?",
+  "Compare MPP and x402 over 7 days",
+  "Average x402 payment size in 24h",
+  "Which services led today?",
 ];
 
 const EMPTY_PROTOCOL: ProtocolData = {
@@ -158,6 +158,10 @@ function usd(value: number, precise = false) {
     minimumFractionDigits: digits,
     maximumFractionDigits: digits,
   }).format(value);
+}
+
+function compactUsd(value: number) {
+  return value >= 1000 ? `$${compact(value)}` : usd(value);
 }
 
 function relativeTime(dateString: string) {
@@ -545,11 +549,13 @@ function LabeledBarChart({
   days,
   yAxisTitle,
   className = "",
+  showTimezone = false,
 }: {
   series: ChartSeries[];
   days: 1 | 7 | 30;
   yAxisTitle: string;
   className?: string;
+  showTimezone?: boolean;
 }) {
   const sampled = useMemo(() => {
     const points = new Map<
@@ -578,7 +584,7 @@ function LabeledBarChart({
     ...sampled.flatMap((point) => Object.values(point.values)),
     1,
   );
-  const tickValues = [max, max * 0.75, max * 0.5, max * 0.25, 0];
+  const tickValues = [max, max * (2 / 3), max * (1 / 3), 0];
   const labelStep = Math.max(1, Math.floor((sampled.length - 1) / 4));
 
   return (
@@ -587,8 +593,8 @@ function LabeledBarChart({
       role="img"
       aria-label={`${yAxisTitle} over the selected ${days === 1 ? "24 hours" : `${days} days`}`}
     >
+      <span className="yAxisCaption">{yAxisTitle}</span>
       <div className="axisChartBody">
-        <span className="yAxisTitle">{yAxisTitle}</span>
         <div className="yTicks" aria-hidden="true">
           {tickValues.map((tick, index) => (
             <span key={`${tick}-${index}`}>{chartNumber(tick, series[0].metric)}</span>
@@ -614,7 +620,7 @@ function LabeledBarChart({
                         key={item.key}
                         className={item.className}
                         style={{ height: `${Math.max(1, (value / max) * 100)}%` }}
-                        title={`${item.label} · ${chartDate(point.label, days)} UTC · ${chartNumber(value, item.metric)}`}
+                        title={`${item.label} · ${chartDate(point.label, days)} · ${chartNumber(value, item.metric)}`}
                       />
                     );
                   })}
@@ -646,7 +652,10 @@ function LabeledBarChart({
           </div>
         </div>
       </div>
-      <span className="xAxisTitle">Time · UTC</span>
+      <div className="chartAxisMeta">
+        <span>Date</span>
+        {showTimezone && <span>All timestamps UTC</span>}
+      </div>
     </div>
   );
 }
@@ -957,7 +966,10 @@ export default function Home() {
             <i />
             <i />
           </span>
-          <span>THE AGENTIC PAYMENTS INDEX</span>
+          <span className="brandCopy">
+            <span>THE AGENTIC PAYMENTS INDEX</span>
+            <small>Observed MPP + x402 activity</small>
+          </span>
         </a>
         <div className="navLinks">
           <a href="#pulse">Network</a>
@@ -993,10 +1005,6 @@ export default function Home() {
             </button>
           ))}
         </div>
-        <p>
-          <span>{selectedProtocolData.live ? "Observed live" : "Unavailable"}</span>
-          {selectedProtocolData.disclosure}
-        </p>
       </div>
 
       <section className="hero" id="top">
@@ -1007,141 +1015,14 @@ export default function Home() {
             <span>{PROTOCOL_LABELS[protocol]}</span>
           </div>
           <h1>
-            Agentic GDP,
-            <br />
+            <span>The machine economy,</span>
             <em>made legible.</em>
           </h1>
-          <p>
-            The open evidence layer for machine-native stablecoin payments.
-            Explore every indexed service, compare MPP and x402, and interrogate
-            the market in plain English.
-          </p>
-          <a className="textLink" href="#pulse">
-            Explore the live network <span>↓</span>
-          </a>
-        </div>
-
-        <aside className="analystConsole" aria-label="Live market overview">
-          <div className="consoleHeading">
-            <div>
-              <span className="consoleEyebrow">Live market overview</span>
-              <strong>At a glance</strong>
-            </div>
-            <div className="periodControl compactPeriod" aria-label="Time period">
-              {PERIODS.map((item) => (
-                <button
-                  key={item.days}
-                  className={period === item.days ? "active" : ""}
-                  onClick={() => {
-                    setPeriod(item.days);
-                    setServicePage(1);
-                  }}
-                  aria-pressed={period === item.days}
-                >
-                  {item.label}
-                </button>
-              ))}
-            </div>
-          </div>
-
-          <div className="heroMetrics">
-            <article>
-              <InfoTerm
-                label="Transactions"
-                definition="Successful protocol-indexed payment events observed during the selected time window."
-                formula="Count of successful payment records."
-                example="A 30-day total of 13.2M means 13.2M successful payment events were indexed."
-              />
-              <strong>{compact(selected.stats.totalTransactions)}</strong>
-              <small>{compact(selected.stats.totalTransactions / period)} per day</small>
-            </article>
-            <article>
-              <InfoTerm
-                label="USD volume"
-                definition="The total stablecoin settlement value recorded during the selected window, expressed in US dollars."
-                formula="Sum of the USD value of observed successful payments."
-                example={`${usd(selected.stats.totalVolume)} observed across the selected window.`}
-              />
-              <strong>{usd(selected.stats.totalVolume)}</strong>
-              <small>{usd(average, true)} average payment</small>
-            </article>
-            <article>
-              <InfoTerm
-                label={protocol === "all" ? "Buyer identifiers" : "Paying agents"}
-                definition={
-                  protocol === "all"
-                    ? "The sum of unique sender identifiers reported by each protocol. The same buyer may appear in both protocols."
-                    : "Unique sender identifiers that completed at least one payment in the selected protocol and window."
-                }
-                formula={
-                  protocol === "all"
-                    ? "MPP unique senders + x402 unique buyers."
-                    : "Distinct successful-payment sender identifiers."
-                }
-                example="One agent using two wallets may be counted twice."
-              />
-              <strong>{compact(selected.stats.uniqueSenders)}</strong>
-              <small>{protocol === "all" ? "Protocol-level sum" : "Unique senders"}</small>
-            </article>
-            <article>
-              <InfoTerm
-                label="Resolved services"
-                definition="Named service-origin records available in the complete paginated directory for the selected protocol view."
-                formula="Count of indexed directory records, not raw recipient addresses."
-                example="One service can use several payment recipients but still resolve to one service origin."
-              />
-              <strong>
-                {directoryLoading && !directory.total
-                  ? "…"
-                  : compact(directory.total)}
-              </strong>
-              <small>Paginated source coverage</small>
-            </article>
-          </div>
-
-          <div className="heroChart">
-            <div className="chartHeading">
-              <div>
-                <InfoTerm
-                  label="Protocol activity"
-                  definition="Successful payments observed in each source-native time bucket, shown separately for MPP and x402."
-                  formula="Count of successful transactions per time bucket."
-                  example="Taller bars indicate more payments during that bucket, not higher payment value."
-                />
-                <small>{period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
-              </div>
-              <div className="chartLegend" aria-label="Chart legend">
-                <span><i className="legendMpp" />MPP</span>
-                <span><i className="legendX402" />x402</span>
-              </div>
-            </div>
-            <LabeledBarChart
-              days={period}
-              yAxisTitle="Successful transactions per bucket"
-              series={[
-                {
-                  key: "mpp",
-                  label: "MPP",
-                  className: "seriesMpp",
-                  buckets: data.protocols.mpp.periods[selectedKey].buckets,
-                  metric: "transactions",
-                },
-                {
-                  key: "x402",
-                  label: "x402",
-                  className: "seriesX402",
-                  buckets: data.protocols.x402.periods[selectedKey].buckets,
-                  metric: "transactions",
-                },
-              ]}
-            />
-          </div>
-
-          <div className="askDock">
+          <div className="askDock heroAsk">
             <div className="askDockLabel">
               <span className="spark">✦</span>
               <span>Ask the Index</span>
-              <small>Computed from live data</small>
+              <small>Computed from observed data</small>
             </div>
             <form onSubmit={submitQuestion}>
               <label className="srOnly" htmlFor="network-question">
@@ -1151,17 +1032,29 @@ export default function Home() {
                 id="network-question"
                 value={question}
                 onChange={(event) => setQuestion(event.target.value)}
-                rows={2}
+                rows={3}
               />
               <button type="submit" aria-label="Ask question">
                 {justAnswered ? "Answered ✓" : "Ask"}{" "}
                 {!justAnswered && <span>↗</span>}
               </button>
             </form>
+            <div className="askSuggestions" aria-label="Suggested questions">
+              {QUESTIONS.map((item) => (
+                <button
+                  key={item}
+                  onClick={() => {
+                    setQuestion(item);
+                    runQuestion(item);
+                  }}
+                >
+                  {item}
+                </button>
+              ))}
+            </div>
             {!hasAsked ? (
               <p className="askHint">
-                <strong>Ready to query the network.</strong> Press Ask to calculate
-                the prefilled question from the latest indexed activity.
+                Ask about a protocol, metric, comparison, or time period.
               </p>
             ) : (
               <div
@@ -1231,23 +1124,196 @@ export default function Home() {
               </div>
             )}
           </div>
+        </div>
+
+        <aside className="analystConsole" aria-label="Live market overview">
+          <div className="consoleHeading">
+            <div>
+              <span className="consoleEyebrow">Live market overview</span>
+              <strong>At a glance</strong>
+            </div>
+            <div className="periodControl compactPeriod" aria-label="Time period">
+              {PERIODS.map((item) => (
+                <button
+                  key={item.days}
+                  className={period === item.days ? "active" : ""}
+                  onClick={() => {
+                    setPeriod(item.days);
+                    setServicePage(1);
+                  }}
+                  aria-pressed={period === item.days}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="heroMetrics">
+            <article>
+              <InfoTerm
+                label="Transactions"
+                definition="Successful protocol-indexed payment events observed during the selected time window."
+                formula="Count of successful payment records."
+                example="A 30-day total of 13.2M means 13.2M successful payment events were indexed."
+              />
+              <strong>
+                {selectedProtocolData.live
+                  ? compact(selected.stats.totalTransactions)
+                  : "—"}
+              </strong>
+              <small>
+                {selectedProtocolData.live
+                  ? `${compact(selected.stats.totalTransactions / period)} per day`
+                  : "Connecting to index"}
+              </small>
+            </article>
+            <article>
+              <InfoTerm
+                label="USD volume"
+                definition="The total stablecoin settlement value recorded during the selected window, expressed in US dollars."
+                formula="Sum of the USD value of observed successful payments."
+                example={`${usd(selected.stats.totalVolume)} observed across the selected window.`}
+              />
+              <strong>
+                {selectedProtocolData.live
+                  ? compactUsd(selected.stats.totalVolume)
+                  : "—"}
+              </strong>
+              <small>
+                {selectedProtocolData.live
+                  ? `${usd(average, true)} average payment`
+                  : "Connecting to index"}
+              </small>
+            </article>
+            <article>
+              <InfoTerm
+                label="Buyer identifiers"
+                definition={
+                  protocol === "all"
+                    ? "The sum of unique sender identifiers reported by each protocol. The same buyer may appear in both protocols."
+                    : "Unique sender identifiers that completed at least one payment in the selected protocol and window."
+                }
+                formula={
+                  protocol === "all"
+                    ? "MPP unique senders + x402 unique buyers."
+                    : "Distinct successful-payment sender identifiers."
+                }
+                example="One agent using two wallets may be counted twice."
+              />
+              <strong>
+                {selectedProtocolData.live
+                  ? compact(selected.stats.uniqueSenders)
+                  : "—"}
+              </strong>
+              <small>
+                {selectedProtocolData.live
+                  ? protocol === "all"
+                    ? "Protocol-level sum"
+                    : "Unique senders"
+                  : "Connecting to index"}
+              </small>
+            </article>
+            <article>
+              <InfoTerm
+                label="Resolved services"
+                definition="Named service-origin records available in the complete paginated directory for the selected protocol view."
+                formula="Count of indexed directory records, not raw recipient addresses."
+                example="One service can use several payment recipients but still resolve to one service origin."
+              />
+              <strong>
+                {directoryLoading && !directory.total
+                  ? "…"
+                  : compact(directory.total)}
+              </strong>
+              <small>Paginated source coverage</small>
+            </article>
+          </div>
+
+          <div className="heroChart">
+            <div className="chartHeading">
+              <div>
+                <InfoTerm
+                  label="Protocol activity"
+                  definition="Successful payments observed in each source-native time bucket, shown separately for MPP and x402."
+                  formula="Count of successful transactions per time bucket."
+                  example="Taller bars indicate more payments during that bucket, not higher payment value."
+                />
+                <small>{period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
+              </div>
+              <div className="chartLegend" aria-label="Chart legend">
+                <span><i className="legendMpp" />MPP</span>
+                <span><i className="legendX402" />x402</span>
+              </div>
+            </div>
+            <LabeledBarChart
+              days={period}
+              showTimezone
+              yAxisTitle="Successful transactions per bucket"
+              series={[
+                {
+                  key: "mpp",
+                  label: "MPP",
+                  className: "seriesMpp",
+                  buckets: data.protocols.mpp.periods[selectedKey].buckets,
+                  metric: "transactions",
+                },
+                {
+                  key: "x402",
+                  label: "x402",
+                  className: "seriesX402",
+                  buckets: data.protocols.x402.periods[selectedKey].buckets,
+                  metric: "transactions",
+                },
+              ]}
+            />
+          </div>
+
         </aside>
       </section>
 
-      <div className="questionRail" aria-label="Suggested questions">
-        <span>Ask next</span>
-        {QUESTIONS.map((item) => (
-          <button
-            key={item}
-            onClick={() => {
-              setQuestion(item);
-              runQuestion(item);
-            }}
-          >
-            {item}
-          </button>
-        ))}
-      </div>
+      <section className="indexDefinition" id="coverage">
+        <div className="definitionLead">
+          <span className="sectionNumber">What this index measures</span>
+          <h2>Open machine-payment activity, with the limits attached.</h2>
+        </div>
+        <div className="definitionBody">
+          <p className="definitionIntro">
+            The Agentic Payments Index observes stablecoin payments made through
+            MPP and x402. These protocols are designed for machine commerce, but
+            protocol data alone does not prove whether the payer was an autonomous
+            agent, an application, or a person using software.
+          </p>
+          <div className="definitionStates">
+            <article>
+              <span>01 / Observed</span>
+              <strong>Protocol activity</strong>
+              <p>
+                Transactions, settlement value, sender and recipient identifiers,
+                timestamps, and resolved service origins exposed by the public
+                indexes.
+              </p>
+            </article>
+            <article>
+              <span>02 / Not inferred</span>
+              <strong>Agent identity</strong>
+              <p>
+                Buyer counts are identifiers—not verified autonomous agents.
+                Cross-protocol identities may overlap and are not deduplicated.
+              </p>
+            </article>
+            <article>
+              <span>03 / Excluded</span>
+              <strong>Private rails</strong>
+              <p>
+                Card and bank settlement, private ledgers, direct wallet transfers,
+                and unindexed networks remain outside this first release.
+              </p>
+            </article>
+          </div>
+          <p className="definitionDisclosure">{selectedProtocolData.disclosure}</p>
+        </div>
+      </section>
 
       <section className="section" id="pulse">
         <div className="sectionHeading">
@@ -1282,14 +1348,14 @@ export default function Home() {
           />
           <MetricCard
             label="USD volume"
-            value={usd(selected.stats.totalVolume)}
+            value={compactUsd(selected.stats.totalVolume)}
             note={`${usd(average, true)} avg payment`}
             definition="The sum of recorded stablecoin settlement values in the selected window, expressed in US dollars."
             formula="Sum of observed successful payment values."
             example="A $2 and a $3 payment produce $5 of USD volume."
           />
           <MetricCard
-            label={protocol === "all" ? "Observed buyers" : "Paying agents"}
+            label="Buyer identifiers"
             value={compact(selected.stats.uniqueSenders)}
             note={protocol === "all" ? "Protocol-level sum" : "Unique senders"}
             definition={

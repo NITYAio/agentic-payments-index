@@ -23,20 +23,20 @@ export async function generateMetadata(): Promise<Metadata> {
 
   return {
     metadataBase: new URL(origin),
-    title: "The Agentic Payments Index — Agentic GDP, made legible.",
+    title: "The Agentic Payments Index — The machine economy, made legible.",
     description:
       "The open evidence layer for machine-native stablecoin payments across MPP and x402.",
     openGraph: {
       title: "The Agentic Payments Index",
       description:
-        "Agentic GDP, made legible. Live MPP and x402 payment intelligence with auditable answers.",
+        "The machine economy, made legible. Live MPP and x402 payment intelligence with auditable answers.",
       type: "website",
       images: [
         {
-          url: `${origin}/og-v3.png`,
-          width: 1568,
-          height: 1003,
-          alt: "The Agentic Payments Index — Agentic GDP, made legible.",
+          url: `${origin}/og-v4.png`,
+          width: 1200,
+          height: 630,
+          alt: "The Agentic Payments Index — The machine economy, made legible.",
         },
       ],
     },
@@ -44,8 +44,8 @@ export async function generateMetadata(): Promise<Metadata> {
       card: "summary_large_image",
       title: "The Agentic Payments Index",
       description:
-        "Agentic GDP, made legible. Live MPP and x402 payment intelligence with auditable answers.",
-      images: [`${origin}/og-v3.png`],
+        "The machine economy, made legible. Live MPP and x402 payment intelligence with auditable answers.",
+      images: [`${origin}/og-v4.png`],
     },
   };
 }
