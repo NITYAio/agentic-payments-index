@@ -33,9 +33,9 @@ export async function generateMetadata(): Promise<Metadata> {
       type: "website",
       images: [
         {
-          url: `${origin}/og.png`,
-          width: 1733,
-          height: 908,
+          url: `${origin}/og-v3.png`,
+          width: 1568,
+          height: 1003,
           alt: "The Agentic Payments Index — Agentic GDP, made legible.",
         },
       ],
@@ -45,7 +45,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: "The Agentic Payments Index",
       description:
         "Agentic GDP, made legible. Live MPP and x402 payment intelligence with auditable answers.",
-      images: [`${origin}/og.png`],
+      images: [`${origin}/og-v3.png`],
     },
   };
 }

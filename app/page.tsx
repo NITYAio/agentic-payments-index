@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useMemo, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useState } from "react";
 
 type Stats = {
   totalTransactions: number;
@@ -454,59 +454,199 @@ function answerQuestion(
   };
 }
 
-function Bars({
-  buckets,
-  metric,
-  large = false,
-}: {
+type MetricKey =
+  | "transactions"
+  | "volume"
+  | "buyers"
+  | "servers"
+  | "average";
+
+type ChartSeries = {
+  key: string;
+  label: string;
+  className: string;
   buckets: Bucket[];
-  metric: "transactions" | "volume" | "buyers" | "servers" | "average";
-  large?: boolean;
+  metric: MetricKey;
+};
+
+function metricValue(bucket: Bucket, metric: MetricKey) {
+  if (metric === "volume") return bucket.total_volume;
+  if (metric === "buyers") return bucket.unique_senders;
+  if (metric === "servers") return bucket.unique_recipients;
+  if (metric === "average") {
+    return bucket.total_transactions
+      ? bucket.total_volume / bucket.total_transactions
+      : 0;
+  }
+  return bucket.total_transactions;
+}
+
+function chartNumber(value: number, metric: MetricKey) {
+  if (metric === "volume" || metric === "average") {
+    return value >= 1000 ? `$${compact(value)}` : usd(value, value < 1);
+  }
+  return compact(Math.round(value));
+}
+
+function chartDate(value: string, days: 1 | 7 | 30) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  return date.toLocaleString("en-US", {
+    month: days === 1 ? undefined : "short",
+    day: days === 1 ? undefined : "numeric",
+    hour: days === 1 ? "numeric" : undefined,
+    timeZone: "UTC",
+  });
+}
+
+function InfoTerm({
+  label,
+  definition,
+  formula,
+  example,
+}: {
+  label: string;
+  definition: string;
+  formula?: string;
+  example?: string;
+}) {
+  const tooltipId = useId();
+  return (
+    <span className="infoTerm">
+      <span>{label}</span>
+      <button
+        type="button"
+        className="infoTrigger"
+        aria-label={`Define ${label}`}
+        aria-describedby={tooltipId}
+      >
+        i
+      </button>
+      <span className="infoPopover" id={tooltipId} role="tooltip">
+        <strong>{label}</strong>
+        <span>{definition}</span>
+        {formula && (
+          <span>
+            <b>Formula</b> {formula}
+          </span>
+        )}
+        {example && (
+          <span>
+            <b>Example</b> {example}
+          </span>
+        )}
+      </span>
+    </span>
+  );
+}
+
+function LabeledBarChart({
+  series,
+  days,
+  yAxisTitle,
+  className = "",
+}: {
+  series: ChartSeries[];
+  days: 1 | 7 | 30;
+  yAxisTitle: string;
+  className?: string;
 }) {
   const sampled = useMemo(() => {
-    if (!buckets.length) {
-      return Array.from({ length: large ? 32 : 24 }, (_, index) => ({
-        value: 28 + ((index * 37) % 68),
-        label: "",
-      }));
-    }
-    const target = large ? 44 : 28;
-    const step = Math.max(1, Math.ceil(buckets.length / target));
-    return buckets
-      .filter((_, index) => index % step === 0)
-      .slice(-target)
-      .map((bucket) => {
-        let value = bucket.total_transactions;
-        if (metric === "volume") value = bucket.total_volume;
-        if (metric === "buyers") value = bucket.unique_senders;
-        if (metric === "servers") value = bucket.unique_recipients;
-        if (metric === "average") {
-          value = bucket.total_transactions
-            ? bucket.total_volume / bucket.total_transactions
-            : 0;
-        }
-        return {
-          value,
-          label: new Date(bucket.bucket_start).toLocaleString("en-US", {
-            month: "short",
-            day: "numeric",
-            hour: "numeric",
-          }),
+    const points = new Map<
+      string,
+      { label: string; values: Record<string, number> }
+    >();
+    series.forEach((item) => {
+      item.buckets.forEach((bucket) => {
+        const point = points.get(bucket.bucket_start) ?? {
+          label: bucket.bucket_start,
+          values: {},
         };
+        point.values[item.key] = metricValue(bucket, item.metric);
+        points.set(bucket.bucket_start, point);
       });
-  }, [buckets, large, metric]);
+    });
+    const ordered = [...points.values()].sort((left, right) =>
+      left.label.localeCompare(right.label),
+    );
+    const target = 18;
+    const step = Math.max(1, Math.ceil(ordered.length / target));
+    return ordered.filter((_, index) => index % step === 0).slice(-target);
+  }, [series]);
 
-  const max = Math.max(...sampled.map((item) => item.value), 1);
+  const max = Math.max(
+    ...sampled.flatMap((point) => Object.values(point.values)),
+    1,
+  );
+  const tickValues = [max, max * 0.75, max * 0.5, max * 0.25, 0];
+  const labelStep = Math.max(1, Math.floor((sampled.length - 1) / 4));
 
   return (
-    <div className={`bars ${large ? "barsLarge" : ""}`} aria-hidden="true">
-      {sampled.map((item, index) => (
-        <span
-          key={`${item.label}-${index}`}
-          title={item.label}
-          style={{ height: `${Math.max(8, (item.value / max) * 100)}%` }}
-        />
-      ))}
+    <div
+      className={`axisChart ${className}`}
+      role="img"
+      aria-label={`${yAxisTitle} over the selected ${days === 1 ? "24 hours" : `${days} days`}`}
+    >
+      <div className="axisChartBody">
+        <span className="yAxisTitle">{yAxisTitle}</span>
+        <div className="yTicks" aria-hidden="true">
+          {tickValues.map((tick, index) => (
+            <span key={`${tick}-${index}`}>{chartNumber(tick, series[0].metric)}</span>
+          ))}
+        </div>
+        <div className="plotArea">
+          <div className="gridLines" aria-hidden="true">
+            {tickValues.map((_, index) => (
+              <i key={index} />
+            ))}
+          </div>
+          {sampled.length ? (
+            <div
+              className="barGroups"
+              style={{ gridTemplateColumns: `repeat(${sampled.length}, minmax(4px, 1fr))` }}
+            >
+              {sampled.map((point, index) => (
+                <div className="barGroup" key={`${point.label}-${index}`}>
+                  {series.map((item) => {
+                    const value = point.values[item.key] ?? 0;
+                    return (
+                      <i
+                        key={item.key}
+                        className={item.className}
+                        style={{ height: `${Math.max(1, (value / max) * 100)}%` }}
+                        title={`${item.label} · ${chartDate(point.label, days)} UTC · ${chartNumber(value, item.metric)}`}
+                      />
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="chartEmpty">Waiting for live bucket data</div>
+          )}
+          <div
+            className="xTicks"
+            style={{
+              gridTemplateColumns: `repeat(${Math.max(sampled.length, 1)}, minmax(4px, 1fr))`,
+            }}
+            aria-hidden="true"
+          >
+            {sampled.map((point, index) => (
+              <span
+                key={`${point.label}-axis`}
+                className={
+                  index % labelStep === 0 || index === sampled.length - 1
+                    ? "visible"
+                    : ""
+                }
+              >
+                {chartDate(point.label, days)}
+              </span>
+            ))}
+          </div>
+        </div>
+      </div>
+      <span className="xAxisTitle">Time · UTC</span>
     </div>
   );
 }
@@ -515,24 +655,30 @@ function MetricCard({
   label,
   value,
   note,
-  buckets,
-  metric,
+  definition,
+  formula,
+  example,
 }: {
   label: string;
   value: string;
   note: string;
-  buckets: Bucket[];
-  metric: "transactions" | "volume" | "buyers" | "servers";
+  definition: string;
+  formula?: string;
+  example?: string;
 }) {
   return (
     <article className="metricCard">
       <div className="metricTop">
-        <span>{label}</span>
+        <InfoTerm
+          label={label}
+          definition={definition}
+          formula={formula}
+          example={example}
+        />
         <span className="metricArrow">↗</span>
       </div>
       <strong>{value}</strong>
       <small>{note}</small>
-      <Bars buckets={buckets} metric={metric} />
     </article>
   );
 }
@@ -616,8 +762,12 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-    setDirectoryLoading(true);
-    setDirectoryError("");
+    queueMicrotask(() => {
+      if (active) {
+        setDirectoryLoading(true);
+        setDirectoryError("");
+      }
+    });
     const parameters = new URLSearchParams({
       protocol,
       days: String(period),
@@ -871,81 +1021,216 @@ export default function Home() {
           </a>
         </div>
 
-        <aside className="queryPanel" aria-label="Ask the data">
-          <div className="queryLabel">
-            <span className="spark">✦</span>
-            Ask the Index
-            <span className="queryMode">Computed from live data</span>
+        <aside className="analystConsole" aria-label="Live market overview">
+          <div className="consoleHeading">
+            <div>
+              <span className="consoleEyebrow">Live market overview</span>
+              <strong>At a glance</strong>
+            </div>
+            <div className="periodControl compactPeriod" aria-label="Time period">
+              {PERIODS.map((item) => (
+                <button
+                  key={item.days}
+                  className={period === item.days ? "active" : ""}
+                  onClick={() => {
+                    setPeriod(item.days);
+                    setServicePage(1);
+                  }}
+                  aria-pressed={period === item.days}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
           </div>
-          <form onSubmit={submitQuestion}>
-            <label className="srOnly" htmlFor="network-question">
-              Ask a question about MPP and x402 payment activity
-            </label>
-            <textarea
-              id="network-question"
-              value={question}
-              onChange={(event) => setQuestion(event.target.value)}
-              rows={3}
+
+          <div className="heroMetrics">
+            <article>
+              <InfoTerm
+                label="Transactions"
+                definition="Successful protocol-indexed payment events observed during the selected time window."
+                formula="Count of successful payment records."
+                example="A 30-day total of 13.2M means 13.2M successful payment events were indexed."
+              />
+              <strong>{compact(selected.stats.totalTransactions)}</strong>
+              <small>{compact(selected.stats.totalTransactions / period)} per day</small>
+            </article>
+            <article>
+              <InfoTerm
+                label="USD volume"
+                definition="The total stablecoin settlement value recorded during the selected window, expressed in US dollars."
+                formula="Sum of the USD value of observed successful payments."
+                example={`${usd(selected.stats.totalVolume)} observed across the selected window.`}
+              />
+              <strong>{usd(selected.stats.totalVolume)}</strong>
+              <small>{usd(average, true)} average payment</small>
+            </article>
+            <article>
+              <InfoTerm
+                label={protocol === "all" ? "Buyer identifiers" : "Paying agents"}
+                definition={
+                  protocol === "all"
+                    ? "The sum of unique sender identifiers reported by each protocol. The same buyer may appear in both protocols."
+                    : "Unique sender identifiers that completed at least one payment in the selected protocol and window."
+                }
+                formula={
+                  protocol === "all"
+                    ? "MPP unique senders + x402 unique buyers."
+                    : "Distinct successful-payment sender identifiers."
+                }
+                example="One agent using two wallets may be counted twice."
+              />
+              <strong>{compact(selected.stats.uniqueSenders)}</strong>
+              <small>{protocol === "all" ? "Protocol-level sum" : "Unique senders"}</small>
+            </article>
+            <article>
+              <InfoTerm
+                label="Resolved services"
+                definition="Named service-origin records available in the complete paginated directory for the selected protocol view."
+                formula="Count of indexed directory records, not raw recipient addresses."
+                example="One service can use several payment recipients but still resolve to one service origin."
+              />
+              <strong>
+                {directoryLoading && !directory.total
+                  ? "…"
+                  : compact(directory.total)}
+              </strong>
+              <small>Paginated source coverage</small>
+            </article>
+          </div>
+
+          <div className="heroChart">
+            <div className="chartHeading">
+              <div>
+                <InfoTerm
+                  label="Protocol activity"
+                  definition="Successful payments observed in each source-native time bucket, shown separately for MPP and x402."
+                  formula="Count of successful transactions per time bucket."
+                  example="Taller bars indicate more payments during that bucket, not higher payment value."
+                />
+                <small>{period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
+              </div>
+              <div className="chartLegend" aria-label="Chart legend">
+                <span><i className="legendMpp" />MPP</span>
+                <span><i className="legendX402" />x402</span>
+              </div>
+            </div>
+            <LabeledBarChart
+              days={period}
+              yAxisTitle="Successful transactions per bucket"
+              series={[
+                {
+                  key: "mpp",
+                  label: "MPP",
+                  className: "seriesMpp",
+                  buckets: data.protocols.mpp.periods[selectedKey].buckets,
+                  metric: "transactions",
+                },
+                {
+                  key: "x402",
+                  label: "x402",
+                  className: "seriesX402",
+                  buckets: data.protocols.x402.periods[selectedKey].buckets,
+                  metric: "transactions",
+                },
+              ]}
             />
-            <div className="queryActions">
-              <span>Try a protocol, metric, and time period</span>
+          </div>
+
+          <div className="askDock">
+            <div className="askDockLabel">
+              <span className="spark">✦</span>
+              <span>Ask the Index</span>
+              <small>Computed from live data</small>
+            </div>
+            <form onSubmit={submitQuestion}>
+              <label className="srOnly" htmlFor="network-question">
+                Ask a question about MPP and x402 payment activity
+              </label>
+              <textarea
+                id="network-question"
+                value={question}
+                onChange={(event) => setQuestion(event.target.value)}
+                rows={2}
+              />
               <button type="submit" aria-label="Ask question">
                 {justAnswered ? "Answered ✓" : "Ask"}{" "}
                 {!justAnswered && <span>↗</span>}
               </button>
-            </div>
-          </form>
-
-          {!hasAsked ? (
-            <div className="answer answerEmpty" aria-live="polite">
-              <span className="emptySpark">✦</span>
-              <div>
-                <strong>Ready to query the network</strong>
-                <p>
-                  Press Ask to calculate the prefilled question from the latest
-                  indexed activity.
-                </p>
-              </div>
-            </div>
-          ) : (
-            <div
-              key={answerRevision}
-              className="answer answerFlash"
-              aria-live="polite"
-              role="status"
-            >
-              <div className="answerHead">
-                <span>{answer.eyebrow}</span>
-                <span className={answer.limited ? "coverageLimited" : "verified"}>
-                  {answer.limited
-                    ? "Coverage limit disclosed"
-                    : "Verified calculation"}
-                </span>
-              </div>
-              <div className="answerValueRow">
-                <strong>{answer.value}</strong>
-                {answer.change !== null && (
-                  <span
-                    className={
-                      answer.change >= 0
-                        ? "changePositive"
-                        : "changeNegative"
-                    }
-                  >
-                    {answer.change >= 0 ? "↑" : "↓"}{" "}
-                    {Math.abs(answer.change).toFixed(1)}%
+            </form>
+            {!hasAsked ? (
+              <p className="askHint">
+                <strong>Ready to query the network.</strong> Press Ask to calculate
+                the prefilled question from the latest indexed activity.
+              </p>
+            ) : (
+              <div
+                key={answerRevision}
+                className="answer answerFlash consoleAnswer"
+                aria-live="polite"
+                role="status"
+              >
+                <div className="answerHead">
+                  <span>{answer.eyebrow}</span>
+                  <span className={answer.limited ? "coverageLimited" : "verified"}>
+                    {answer.limited
+                      ? "Coverage limit disclosed"
+                      : "Verified calculation"}
                   </span>
-                )}
+                </div>
+                <div className="answerValueRow">
+                  <strong>{answer.value}</strong>
+                  {answer.change !== null && (
+                    <span
+                      className={
+                        answer.change >= 0
+                          ? "changePositive"
+                          : "changeNegative"
+                      }
+                    >
+                      {answer.change >= 0 ? "↑" : "↓"}{" "}
+                      {Math.abs(answer.change).toFixed(1)}%
+                    </span>
+                  )}
+                </div>
+                <p className="comparison">{answer.comparison}</p>
+                <LabeledBarChart
+                  className="answerChart"
+                  days={answer.days}
+                  yAxisTitle={
+                    answer.metric === "volume"
+                      ? "USD volume per bucket"
+                      : answer.metric === "average"
+                        ? "Average USD payment per bucket"
+                        : answer.metric === "buyers"
+                          ? "Buyer identifiers per bucket"
+                          : answer.metric === "servers"
+                            ? "Recipient identifiers per bucket"
+                            : "Successful transactions per bucket"
+                  }
+                  series={[
+                    {
+                      key: answer.protocol,
+                      label: PROTOCOL_LABELS[answer.protocol],
+                      className:
+                        answer.protocol === "mpp"
+                          ? "seriesMpp"
+                          : answer.protocol === "x402"
+                            ? "seriesX402"
+                            : "seriesAll",
+                      buckets: answerBuckets,
+                      metric: answer.metric,
+                    },
+                  ]}
+                />
+                <div className="formula">
+                  <span>Calculation</span>
+                  <code>{answer.formula}</code>
+                </div>
+                <p className="explanation">{answer.explanation}</p>
               </div>
-              <p className="comparison">{answer.comparison}</p>
-              <Bars buckets={answerBuckets} metric={answer.metric} />
-              <div className="formula">
-                <span>Calculation</span>
-                <code>{answer.formula}</code>
-              </div>
-              <p className="explanation">{answer.explanation}</p>
-            </div>
-          )}
+            )}
+          </div>
         </aside>
       </section>
 
@@ -991,22 +1276,33 @@ export default function Home() {
             label="Transactions"
             value={compact(selected.stats.totalTransactions)}
             note={`${compact(selected.stats.totalTransactions / period)} / day`}
-            buckets={selected.buckets}
-            metric="transactions"
+            definition="Successful protocol-indexed payment events observed during the selected time window."
+            formula="Count of successful payment records."
+            example="A retry is counted only if it appears as a separate successful payment record."
           />
           <MetricCard
             label="USD volume"
             value={usd(selected.stats.totalVolume)}
             note={`${usd(average, true)} avg payment`}
-            buckets={selected.buckets}
-            metric="volume"
+            definition="The sum of recorded stablecoin settlement values in the selected window, expressed in US dollars."
+            formula="Sum of observed successful payment values."
+            example="A $2 and a $3 payment produce $5 of USD volume."
           />
           <MetricCard
             label={protocol === "all" ? "Observed buyers" : "Paying agents"}
             value={compact(selected.stats.uniqueSenders)}
             note={protocol === "all" ? "Protocol-level sum" : "Unique senders"}
-            buckets={selected.buckets}
-            metric="buyers"
+            definition={
+              protocol === "all"
+                ? "The sum of unique sender identifiers reported by MPP and x402. Cross-protocol identity is not deduplicated."
+                : "Unique sender identifiers that completed at least one payment in this protocol and window."
+            }
+            formula={
+              protocol === "all"
+                ? "MPP unique senders + x402 unique buyers."
+                : "Distinct successful-payment sender identifiers."
+            }
+            example="One buyer using both protocols can appear twice in the combined view."
           />
           <MetricCard
             label={
@@ -1020,8 +1316,9 @@ export default function Home() {
                 ? "Protocol-level sum; not companies"
                 : "Unique recipient identities"
             }
-            buckets={selected.buckets}
-            metric="servers"
+            definition="Unique payment-recipient identifiers observed in the selected window. These are not necessarily distinct companies or services."
+            formula="Distinct recipient identifiers reported by the selected protocol indexes."
+            example="Several wallet addresses may belong to the same underlying service."
           />
         </div>
 
@@ -1029,7 +1326,12 @@ export default function Home() {
           <div className="protocolComparison">
             <div className="comparisonHeading">
               <div>
-                <span>Protocol share</span>
+                <InfoTerm
+                  label="Protocol share"
+                  definition="Each protocol's portion of the combined observed total for the same metric and time window."
+                  formula="Protocol value ÷ combined MPP and x402 value × 100."
+                  example="If MPP has 40 transactions and x402 has 60, their shares are 40% and 60%."
+                />
                 <strong>MPP vs x402</strong>
               </div>
               <small>Same {period === 1 ? "24-hour" : `${period}-day`} window</small>
@@ -1085,7 +1387,12 @@ export default function Home() {
           <article className="activityPanel">
             <div className="panelHeading">
               <div>
-                <span>Transaction velocity</span>
+                <InfoTerm
+                  label="Transaction velocity"
+                  definition="The average number of successful transactions observed per day in the selected time window."
+                  formula="Total successful transactions ÷ number of days."
+                  example={`${compact(selected.stats.totalTransactions)} ÷ ${period} = ${compact(Math.round(selected.stats.totalTransactions / period))} transactions per day.`}
+                />
                 <strong>
                   {compact(Math.round(selected.stats.totalTransactions / period))}
                   <small> / day</small>
@@ -1100,15 +1407,37 @@ export default function Home() {
                 </span>
               </div>
             </div>
-            <Bars buckets={selected.buckets} metric="transactions" large />
-            <div className="axis">
-              <span>{period === 1 ? "24 hours ago" : `${period} days ago`}</span>
-              <span>Now</span>
-            </div>
+            <LabeledBarChart
+              className="activityChart"
+              days={period}
+              yAxisTitle="Successful transactions per bucket"
+              series={[
+                {
+                  key: protocol,
+                  label: PROTOCOL_LABELS[protocol],
+                  className:
+                    protocol === "mpp"
+                      ? "seriesMpp"
+                      : protocol === "x402"
+                        ? "seriesX402"
+                        : "seriesAll",
+                  buckets: selected.buckets,
+                  metric: "transactions",
+                },
+              ]}
+            />
           </article>
 
           <article className="signalPanel">
-            <span className="signalLabel">Signal / payment size</span>
+            <span className="signalLabel">
+              Signal /{" "}
+              <InfoTerm
+                label="average payment size"
+                definition="The mean USD value of successful observed payments in the selected window."
+                formula="Total USD volume ÷ successful transactions."
+                example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per payment.`}
+              />
+            </span>
             <strong>{usd(average, true)}</strong>
             <p>Average observed payment in this period.</p>
             <div className="signalRule" />

@@ -55,7 +55,7 @@ test("ships product metadata and removes starter dependencies", async () => {
   assert.match(page, /Verified calculation/i);
   assert.match(page, /Machine-readable view/i);
   assert.match(page, /Indexed service records/i);
-  assert.match(layout, /og\.png/i);
+  assert.match(layout, /og-v3\.png/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview", projectRoot)));
 });
