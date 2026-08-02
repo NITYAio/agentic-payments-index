@@ -1,7 +1,8 @@
 import type { Metadata } from "next";
-import { headers } from "next/headers";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
+
+const publicOrigin = "https://agenticpaymentsindex.org";
 
 const geistSans = Geist({
   variable: "--font-geist-sans",
@@ -13,27 +14,24 @@ const geistMono = Geist_Mono({
   subsets: ["latin"],
 });
 
-export async function generateMetadata(): Promise<Metadata> {
-  const incoming = await headers();
-  const host =
-    incoming.get("x-forwarded-host") ?? incoming.get("host") ?? "localhost:3000";
-  const protocol =
-    incoming.get("x-forwarded-proto") ?? (host.includes("localhost") ? "http" : "https");
-  const origin = `${protocol}://${host}`;
-
+export function generateMetadata(): Metadata {
   return {
-    metadataBase: new URL(origin),
+    metadataBase: new URL(publicOrigin),
     title: "The Agentic Payments Index — The machine economy, made legible.",
     description:
       "The open evidence layer for machine-native stablecoin payments across MPP and x402.",
+    alternates: {
+      canonical: "/",
+    },
     openGraph: {
       title: "The Agentic Payments Index",
       description:
         "The machine economy, made legible. Live MPP and x402 payment intelligence with auditable answers.",
       type: "website",
+      url: publicOrigin,
       images: [
         {
-          url: `${origin}/og-v5.png`,
+          url: `${publicOrigin}/og-v5.png`,
           width: 1200,
           height: 630,
           alt: "The Agentic Payments Index — The machine economy, made legible.",
@@ -45,7 +43,7 @@ export async function generateMetadata(): Promise<Metadata> {
       title: "The Agentic Payments Index",
       description:
         "The machine economy, made legible. Live MPP and x402 payment intelligence with auditable answers.",
-      images: [`${origin}/og-v5.png`],
+      images: [`${publicOrigin}/og-v5.png`],
     },
   };
 }
