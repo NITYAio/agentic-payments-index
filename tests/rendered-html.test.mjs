@@ -1,6 +1,7 @@
 import assert from "node:assert/strict";
 import { access, readFile } from "node:fs/promises";
 import test from "node:test";
+import "./register-cloudflare.mjs";
 
 const projectRoot = new URL("../", import.meta.url);
 
@@ -36,10 +37,14 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /All protocols/i);
   assert.match(html, /MPP \+ x402/i);
   assert.match(html, /Ask the Index/i);
-  assert.match(html, /Ask about a protocol/i);
+  assert.match(html, /Ask about metrics/i);
   assert.match(html, /What this index measures/i);
-  assert.match(html, /All timestamps UTC/i);
+  assert.match(html, /Times shown in UTC/i);
   assert.match(html, /Network pulse/i);
+  assert.match(html, /Active payer addresses/i);
+  assert.match(html, /Active server identities/i);
+  assert.match(html, /Identity intelligence/i);
+  assert.match(html, /Submit a service/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
 });
 
@@ -48,7 +53,7 @@ test("ships product metadata and removes starter dependencies", async () => {
     readFile(new URL("../app/page.tsx", import.meta.url), "utf8"),
     readFile(new URL("../app/layout.tsx", import.meta.url), "utf8"),
     readFile(new URL("../package.json", import.meta.url), "utf8"),
-    access(new URL("../public/og-v4.png", import.meta.url)),
+    access(new URL("../public/og-v5.png", import.meta.url)),
   ]);
 
   assert.match(page, /Compare MPP and x402/i);
@@ -56,7 +61,10 @@ test("ships product metadata and removes starter dependencies", async () => {
   assert.match(page, /Verified calculation/i);
   assert.match(page, /Machine-readable view/i);
   assert.match(page, /Indexed service records/i);
-  assert.match(layout, /og-v4\.png/i);
+  assert.match(page, /Payer addresses/i);
+  assert.match(page, /Available indexed history/i);
+  assert.match(page, /\/api\/ask/i);
+  assert.match(layout, /og-v5\.png/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview", projectRoot)));
 });

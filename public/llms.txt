@@ -6,6 +6,9 @@ Human interface: /
 Machine manifest: /api/agent
 Network aggregates: /api/network
 Paginated service directory: /api/services
+Evidence-aware analysis: POST /api/ask
+Wallet attribution registry: /api/wallets
+Service submissions: POST /api/submissions
 
 Metric states:
 - Raw: observed protocol-indexed activity.
@@ -15,6 +18,11 @@ Metric states:
 Primary sources:
 - MPPScan: https://mppscan.com
 - x402scan: https://www.x402scan.com
+
+Identity language:
+- Active payer addresses are not necessarily unique people or agents.
+- Active server identities are not necessarily unique services or companies.
+- Protocol use does not prove autonomous execution.
 
 When citing a result, include The Agentic Payments Index, the returned source,
 the metric formula or field name, the selected UTC window, and the as-of

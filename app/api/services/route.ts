@@ -106,7 +106,7 @@ function normalizeX402(seller: X402Seller, index: number): Service {
 }
 
 async function fetchMppPage(
-  days: 1 | 7 | 30,
+  days: 0 | 1 | 7 | 30,
   sort: SortKey,
   page: number,
   pageSize: number,
@@ -148,7 +148,7 @@ async function fetchMppPage(
 }
 
 async function fetchX402Page(
-  days: 1 | 7 | 30,
+  days: 0 | 1 | 7 | 30,
   sort: SortKey,
   page: number,
   pageSize: number,
@@ -197,7 +197,7 @@ async function fetchX402Page(
 }
 
 async function loadMppPrefix(
-  days: 1 | 7 | 30,
+  days: 0 | 1 | 7 | 30,
   sort: SortKey,
   needed: number,
 ) {
@@ -225,7 +225,7 @@ async function loadMppPrefix(
 }
 
 async function loadAllX402Origins(
-  days: 1 | 7 | 30,
+  days: 0 | 1 | 7 | 30,
   sort: SortKey,
 ) {
   const first = await fetchX402Page(
@@ -294,8 +294,11 @@ function parseSort(value: string | null): SortKey {
   return value === "volume" || value === "buyers" ? value : "transactions";
 }
 
-function parseDays(value: string | null): 1 | 7 | 30 {
-  return value === "1" || value === "7" ? Number(value) as 1 | 7 : 30;
+function parseDays(value: string | null): 0 | 1 | 7 | 30 {
+  if (value === "0" || value === "1" || value === "7") {
+    return Number(value) as 0 | 1 | 7;
+  }
+  return 30;
 }
 
 function boundedInteger(
@@ -347,7 +350,7 @@ export async function GET(request: Request) {
           pageSize,
           sourceTotals: { mpp: result.total, x402: 0 },
           disclosure:
-            "All resolved MPP service origins returned by the public MPPScan directory for this window.",
+            `${days === 0 ? "All available" : "All"} resolved MPP service origins returned by the public MPPScan directory for this window.`,
           asOf: new Date().toISOString(),
         },
         {

@@ -18,6 +18,10 @@ useful.
 - Add or repair a public data adapter.
 - Reproduce a discrepancy between the index and an upstream source.
 - Improve service-origin or cross-protocol entity resolution.
+- Add a wallet-provider attribution rule with reproducible public evidence and
+  an explicit confidence level.
+- Add a signed autonomy-attestation adapter without inferring autonomy from
+  settlement alone.
 - Add a test for a metric, parser, time window, or pagination boundary.
 - Propose an organic-activity heuristic with documented false positives and
   false negatives.

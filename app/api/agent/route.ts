@@ -6,7 +6,7 @@ export async function GET(request: Request) {
       slug: "the-agentic-payments-index",
       description:
         "An open evidence layer for machine-native stablecoin payments across MPP and x402.",
-      schemaVersion: "0.2.0",
+      schemaVersion: "0.3.0",
       access: {
         authentication: "none",
         mode: "read-only",
@@ -16,7 +16,7 @@ export async function GET(request: Request) {
         network: {
           url: `${origin}/api/network`,
           description:
-            "Protocol-level 24h, 7d, and 30d aggregates and time-series buckets.",
+            "Protocol-level 24h, 7d, 30d, and available-history aggregates and time-series buckets.",
         },
         services: {
           url: `${origin}/api/services`,
@@ -24,11 +24,28 @@ export async function GET(request: Request) {
             "Paginated service-origin records with protocol, period, and ranking controls.",
           query: {
             protocol: ["all", "mpp", "x402"],
-            days: [1, 7, 30],
+            days: [0, 1, 7, 30],
             sort: ["transactions", "volume", "buyers"],
             page: "integer >= 1",
             pageSize: "integer 10–50",
           },
+        },
+        ask: {
+          url: `${origin}/api/ask`,
+          method: "POST",
+          description:
+            "Deterministic analysis with explicit evidence gates for identity-level questions.",
+        },
+        wallets: {
+          url: `${origin}/api/wallets`,
+          description:
+            "Open wallet-attribution registry, evidence rules, and current attribution coverage.",
+        },
+        submissions: {
+          url: `${origin}/api/submissions`,
+          method: "POST",
+          description:
+            "Service submission and domain-control verification challenge flow.",
         },
       },
       metricStates: {

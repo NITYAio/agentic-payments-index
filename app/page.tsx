@@ -44,8 +44,8 @@ type ProtocolData = {
   source: string;
   live: boolean;
   disclosure: string;
-  periods: Record<"1" | "7" | "30", Period>;
-  services: Record<"1" | "7" | "30", Service[]>;
+  periods: Record<"0" | "1" | "7" | "30", Period>;
+  services: Record<"0" | "1" | "7" | "30", Service[]>;
 };
 
 type ExplorerData = {
@@ -69,6 +69,18 @@ type DirectoryData = {
   asOf: string;
 };
 
+type SubmissionResult = {
+  id: string;
+  serviceName: string;
+  status: string;
+  verificationMessage: string | null;
+  verification: {
+    url: string;
+    body: Record<string, string>;
+    note: string;
+  };
+};
+
 type Answer = {
   eyebrow: string;
   value: string;
@@ -76,22 +88,28 @@ type Answer = {
   comparison: string;
   formula: string;
   explanation: string;
-  days: 1 | 7 | 30;
+  days: 0 | 1 | 7 | 30;
   metric: "average" | "volume" | "transactions" | "buyers" | "servers";
   protocol: ProtocolKey;
   limited?: boolean;
+  status?: string;
+  visualization?: "series" | "none";
+  chartProtocols?: ProtocolKey[];
+  source?: string;
+  asOf?: string;
 };
 
 const PERIODS = [
   { days: 1 as const, label: "24h" },
   { days: 7 as const, label: "7d" },
   { days: 30 as const, label: "30d" },
+  { days: 0 as const, label: "All" },
 ];
 
 const QUESTIONS = [
-  "Compare MPP and x402 over 7 days",
-  "Average x402 payment size in 24h",
-  "Which services led today?",
+  "Compare MPP and x402 growth over 30 days",
+  "Why did MPP transactions spike on July 27?",
+  "Show buyer cohort retention over 12 months",
 ];
 
 const EMPTY_PROTOCOL: ProtocolData = {
@@ -99,6 +117,10 @@ const EMPTY_PROTOCOL: ProtocolData = {
   live: false,
   disclosure: "No placeholder values are shown while live data loads.",
   periods: {
+    "0": {
+      stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
+      buckets: [],
+    },
     "1": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
@@ -112,7 +134,7 @@ const EMPTY_PROTOCOL: ProtocolData = {
       buckets: [],
     },
   },
-  services: { "1": [], "7": [], "30": [] },
+  services: { "0": [], "1": [], "7": [], "30": [] },
 };
 
 const FALLBACK: ExplorerData = {
@@ -180,16 +202,49 @@ function percentageDelta(value: number, baseline: number) {
   return ((value - baseline) / baseline) * 100;
 }
 
+function periodLabel(days: 0 | 1 | 7 | 30) {
+  if (days === 0) return "Available history";
+  if (days === 1) return "24 hours";
+  return `${days} days`;
+}
+
+function periodDays(days: 0 | 1 | 7 | 30, buckets: Bucket[]) {
+  if (days) return days;
+  const times = buckets
+    .map((bucket) => new Date(bucket.bucket_start).getTime())
+    .filter(Number.isFinite)
+    .sort((left, right) => left - right);
+  if (times.length < 2) return 1;
+  return Math.max(1, (times.at(-1)! - times[0]) / 86_400_000 + 1);
+}
+
+function coverageStart(buckets: Bucket[]) {
+  const first = [...buckets]
+    .map((bucket) => bucket.bucket_start)
+    .sort()[0];
+  if (!first) return "the first available record";
+  return new Date(first).toLocaleDateString("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function getTimeframes(question: string): {
-  primary: 1 | 7 | 30;
-  comparison: 1 | 7 | 30 | null;
+  primary: 0 | 1 | 7 | 30;
+  comparison: 0 | 1 | 7 | 30 | null;
 } {
   const text = question.toLowerCase();
-  const occurrences: Array<{ days: 1 | 7 | 30; index: number }> = [];
-  const patterns: Array<{ days: 1 | 7 | 30; pattern: RegExp }> = [
+  const occurrences: Array<{ days: 0 | 1 | 7 | 30; index: number }> = [];
+  const patterns: Array<{ days: 0 | 1 | 7 | 30; pattern: RegExp }> = [
+    {
+      days: 0,
+      pattern: /\b(?:all[ -]?time|all history|entire history|since inception)\b/g,
+    },
     {
       days: 1,
-      pattern: /\b(?:24\s*(?:hours?|h)|today|1\s*day|one\s*day)\b/g,
+      pattern: /\b(?:24\s*(?:hours?|hrs?|h)|today|1\s*day|one\s*day)\b/g,
     },
     {
       days: 7,
@@ -240,16 +295,18 @@ function answerQuestion(
   const protocolLabel = PROTOCOL_LABELS[protocol];
   const { primary: days, comparison: comparisonDays } = getTimeframes(text);
   const current =
-    protocolData.periods[String(days) as "1" | "7" | "30"].stats;
+    protocolData.periods[String(days) as "0" | "1" | "7" | "30"].stats;
   const baseline = comparisonDays
-    ? protocolData.periods[String(comparisonDays) as "1" | "7" | "30"].stats
+    ? protocolData.periods[String(comparisonDays) as "0" | "1" | "7" | "30"].stats
     : null;
-  const periodLabel = days === 1 ? "past 24 hours" : `past ${days} days`;
+  const periodLabel = days === 0 ? "available indexed history" : days === 1 ? "past 24 hours" : `past ${days} days`;
   const comparisonLabel =
     comparisonDays === 1
       ? "the 24-hour period"
       : comparisonDays
-        ? `the aggregate ${comparisonDays}-day period`
+        ? comparisonDays === 0
+          ? "available indexed history"
+          : `the aggregate ${comparisonDays}-day period`
         : null;
 
   if (/\b(previous|prior|preceding)\b/.test(text)) {
@@ -268,6 +325,24 @@ function answerQuestion(
     };
   }
 
+  if (/\b(cohort|retention|wallet|autonomous|autonomy)\b/.test(text)) {
+    return {
+      eyebrow: "Identity analysis · evidence required",
+      value: "Not yet measurable",
+      change: null,
+      comparison: "The loaded aggregate snapshot does not contain identity-level history or attribution evidence.",
+      formula: "Requires independently indexed payment identities over time",
+      explanation:
+        "The Index does not estimate cohorts, wallet providers, or autonomous execution from rolling aggregate counts. The live analysis service explains the exact evidence gate when connected.",
+      days,
+      metric: "buyers",
+      protocol,
+      limited: true,
+      status: "Identity evidence required",
+      visualization: "none",
+    };
+  }
+
   if (
     protocol === "all" &&
     /\bmpp\b/.test(text) &&
@@ -275,10 +350,11 @@ function answerQuestion(
     (text.includes("compare") ||
       text.includes("versus") ||
       text.includes(" vs ") ||
-      text.includes("share"))
+      text.includes("share")) &&
+    !/\b(growth|grow|trend|change rate|increas|decreas)\b/.test(text)
   ) {
-    const mpp = data.protocols.mpp.periods[String(days) as "1" | "7" | "30"].stats;
-    const x402 = data.protocols.x402.periods[String(days) as "1" | "7" | "30"].stats;
+    const mpp = data.protocols.mpp.periods[String(days) as "0" | "1" | "7" | "30"].stats;
+    const x402 = data.protocols.x402.periods[String(days) as "0" | "1" | "7" | "30"].stats;
     const compareVolume =
       text.includes("volume") ||
       text.includes("usd") ||
@@ -336,7 +412,7 @@ function answerQuestion(
     text.includes("sender")
   ) {
     return {
-      eyebrow: `Unique paying agents · ${periodLabel}`,
+      eyebrow: `Active payer addresses · ${periodLabel}`,
       value: compact(current.uniqueSenders),
       change: baseline
         ? percentageDelta(current.uniqueSenders, baseline.uniqueSenders)
@@ -346,7 +422,7 @@ function answerQuestion(
         : "unique agents in the selected period",
       formula: `${compact(current.uniqueSenders)} distinct paying addresses`,
       explanation:
-        "Each sender is counted once in the selected period, even if it made many payments.",
+        "This is not a count of people or autonomous agents. One actor may use several addresses, several actors may share one, and combined protocol identities may overlap.",
       days,
       metric: "buyers",
       protocol,
@@ -359,7 +435,7 @@ function answerQuestion(
     text.includes("service")
   ) {
     const services =
-      protocolData.services[String(days) as "1" | "7" | "30"] ??
+      protocolData.services[String(days) as "0" | "1" | "7" | "30"] ??
       protocolData.services["1"];
     const top = services[0];
     if (
@@ -414,7 +490,8 @@ function answerQuestion(
     text.includes("usd") ||
     text.includes("dollar")
   ) {
-    const daily = current.totalVolume / days;
+    const divisor = periodDays(days, protocolData.periods[String(days) as "0" | "1" | "7" | "30"].buckets);
+    const daily = current.totalVolume / divisor;
     const baselineDaily =
       baseline && comparisonDays
         ? baseline.totalVolume / comparisonDays
@@ -436,7 +513,8 @@ function answerQuestion(
     };
   }
 
-  const daily = current.totalTransactions / days;
+  const divisor = periodDays(days, protocolData.periods[String(days) as "0" | "1" | "7" | "30"].buckets);
+  const daily = current.totalTransactions / divisor;
   const baselineDaily =
     baseline && comparisonDays
       ? baseline.totalTransactions / comparisonDays
@@ -492,7 +570,7 @@ function chartNumber(value: number, metric: MetricKey) {
   return compact(Math.round(value));
 }
 
-function chartDate(value: string, days: 1 | 7 | 30) {
+function chartDate(value: string, days: 0 | 1 | 7 | 30) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "";
   return date.toLocaleString("en-US", {
@@ -549,13 +627,11 @@ function LabeledBarChart({
   days,
   yAxisTitle,
   className = "",
-  showTimezone = false,
 }: {
   series: ChartSeries[];
-  days: 1 | 7 | 30;
+  days: 0 | 1 | 7 | 30;
   yAxisTitle: string;
   className?: string;
-  showTimezone?: boolean;
 }) {
   const sampled = useMemo(() => {
     const points = new Map<
@@ -591,7 +667,7 @@ function LabeledBarChart({
     <div
       className={`axisChart ${className}`}
       role="img"
-      aria-label={`${yAxisTitle} over the selected ${days === 1 ? "24 hours" : `${days} days`}`}
+      aria-label={`${yAxisTitle} over ${days === 0 ? "available indexed history" : days === 1 ? "the selected 24 hours" : `the selected ${days} days`}`}
     >
       <span className="yAxisCaption">{yAxisTitle}</span>
       <div className="axisChartBody">
@@ -654,7 +730,6 @@ function LabeledBarChart({
       </div>
       <div className="chartAxisMeta">
         <span>Date</span>
-        {showTimezone && <span>All timestamps UTC</span>}
       </div>
     </div>
   );
@@ -730,12 +805,15 @@ export default function Home() {
   const [data, setData] = useState<ExplorerData>(FALLBACK);
   const [loading, setLoading] = useState(true);
   const [protocol, setProtocol] = useState<ProtocolKey>("all");
-  const [period, setPeriod] = useState<1 | 7 | 30>(30);
+  const [period, setPeriod] = useState<0 | 1 | 7 | 30>(30);
   const [question, setQuestion] = useState(
     "Compare MPP and x402 transaction volume over the last 7 days.",
   );
   const [submittedQuestion, setSubmittedQuestion] = useState(question);
   const [hasAsked, setHasAsked] = useState(false);
+  const [remoteAnswer, setRemoteAnswer] = useState<Answer | null>(null);
+  const [answering, setAnswering] = useState(false);
+  const [answerError, setAnswerError] = useState("");
   const [answerRevision, setAnswerRevision] = useState(0);
   const [justAnswered, setJustAnswered] = useState(false);
   const [sort, setSort] = useState<"transactions" | "volume" | "buyers">(
@@ -747,6 +825,19 @@ export default function Home() {
   const [directoryError, setDirectoryError] = useState("");
   const [servicePage, setServicePage] = useState(1);
   const [machineMode, setMachineMode] = useState(false);
+  const [submissionOpen, setSubmissionOpen] = useState(false);
+  const [submissionLoading, setSubmissionLoading] = useState(false);
+  const [submissionError, setSubmissionError] = useState("");
+  const [submissionResult, setSubmissionResult] =
+    useState<SubmissionResult | null>(null);
+  const [submissionForm, setSubmissionForm] = useState({
+    serviceName: "",
+    canonicalUrl: "",
+    protocol: "mpp",
+    network: "Tempo",
+    protocolEndpoint: "",
+    contactEmail: "",
+  });
 
   useEffect(() => {
     let active = true;
@@ -807,17 +898,38 @@ export default function Home() {
     };
   }, [period, protocol, servicePage, sort]);
 
-  const selectedKey = String(period) as "1" | "7" | "30";
+  const selectedKey = String(period) as "0" | "1" | "7" | "30";
   const selectedProtocolData = data.protocols[protocol];
   const selected = selectedProtocolData.periods[selectedKey];
-  const answer = useMemo(
+  const fallbackAnswer = useMemo(
     () => answerQuestion(data, submittedQuestion, protocol),
     [data, submittedQuestion, protocol],
   );
+  const answer = remoteAnswer ?? fallbackAnswer;
   const answerBuckets =
     data.protocols[answer.protocol].periods[
-      String(answer.days) as "1" | "7" | "30"
+      String(answer.days) as "0" | "1" | "7" | "30"
     ].buckets;
+  const answerSeries: ChartSeries[] = (answer.chartProtocols ?? [answer.protocol]).map(
+    (item) => ({
+      key: item,
+      label: PROTOCOL_LABELS[item],
+      className:
+        item === "mpp"
+          ? "seriesMpp"
+          : item === "x402"
+            ? "seriesX402"
+            : "seriesAll",
+      buckets:
+        item === answer.protocol
+          ? answerBuckets
+          : data.protocols[item].periods[
+              String(answer.days) as "0" | "1" | "7" | "30"
+            ].buckets,
+      metric: answer.metric,
+    }),
+  );
+  const selectedPeriodDays = periodDays(period, selected.buckets);
   const average = selected.stats.totalTransactions
     ? selected.stats.totalVolume / selected.stats.totalTransactions
     : 0;
@@ -827,15 +939,40 @@ export default function Home() {
     mppSelected.totalTransactions + x402Selected.totalTransactions;
   const combinedVolume = mppSelected.totalVolume + x402Selected.totalVolume;
 
-  function runQuestion(nextQuestion: string) {
+  async function runQuestion(nextQuestion: string) {
     const trimmed = nextQuestion.trim();
     if (!trimmed) return;
     setSubmittedQuestion(trimmed);
-    setProtocol(protocolForQuestion(trimmed, protocol));
+    const nextProtocol = protocolForQuestion(trimmed, protocol);
+    setProtocol(nextProtocol);
+    setRemoteAnswer(null);
+    setAnswerError("");
     setHasAsked(true);
-    setAnswerRevision((revision) => revision + 1);
-    setJustAnswered(true);
-    window.setTimeout(() => setJustAnswered(false), 1400);
+    setAnswering(true);
+    try {
+      const response = await fetch("/api/ask", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: trimmed,
+          protocol: nextProtocol,
+          windowDays: period,
+        }),
+      });
+      if (!response.ok) throw new Error("Analysis request failed");
+      const nextAnswer = (await response.json()) as Answer;
+      setRemoteAnswer(nextAnswer);
+      setAnswerRevision((revision) => revision + 1);
+      setJustAnswered(true);
+      window.setTimeout(() => setJustAnswered(false), 1400);
+    } catch {
+      setAnswerError(
+        "Live analysis is temporarily unavailable. The visible fallback uses the loaded snapshot.",
+      );
+      setAnswerRevision((revision) => revision + 1);
+    } finally {
+      setAnswering(false);
+    }
   }
 
   function submitQuestion(event: FormEvent) {
@@ -843,10 +980,50 @@ export default function Home() {
     runQuestion(question);
   }
 
+  async function submitService(event: FormEvent) {
+    event.preventDefault();
+    setSubmissionLoading(true);
+    setSubmissionError("");
+    try {
+      const response = await fetch("/api/submissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(submissionForm),
+      });
+      const payload = (await response.json()) as SubmissionResult & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Submission failed");
+      setSubmissionResult(payload);
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : "Submission failed.");
+    } finally {
+      setSubmissionLoading(false);
+    }
+  }
+
+  async function verifyService() {
+    if (!submissionResult) return;
+    setSubmissionLoading(true);
+    setSubmissionError("");
+    try {
+      const response = await fetch("/api/submissions/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id: submissionResult.id }),
+      });
+      const payload = (await response.json()) as SubmissionResult & { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Verification failed");
+      setSubmissionResult(payload);
+    } catch (error) {
+      setSubmissionError(error instanceof Error ? error.message : "Verification failed.");
+    } finally {
+      setSubmissionLoading(false);
+    }
+  }
+
   if (machineMode) {
     const machinePayload = {
       index: "the-agentic-payments-index",
-      schemaVersion: "0.2.0",
+      schemaVersion: "0.3.0",
       asOf: data.asOf || null,
       selectedView: {
         protocol,
@@ -855,8 +1032,10 @@ export default function Home() {
       },
       coverage: {
         indexedServiceRecords: directory.total,
-        mppResolvedOrigins: directory.sourceTotals.mpp,
-        x402BazaarOrigins: directory.sourceTotals.x402,
+        activePayerAddresses: selected.stats.uniqueSenders,
+        activeServerIdentities: selected.stats.uniqueRecipients,
+        mppIndexedOrigins: directory.sourceTotals.mpp,
+        x402IndexedOrigins: directory.sourceTotals.x402,
         caveat: directory.disclosure,
       },
       provenance: {
@@ -870,6 +1049,9 @@ export default function Home() {
         directory:
           `/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}`,
         manifest: "/api/agent",
+        ask: "/api/ask",
+        walletRegistry: "/api/wallets",
+        submitService: "/api/submissions",
       },
     };
 
@@ -910,6 +1092,15 @@ export default function Home() {
               </a>
               <a href="/api/agent" target="_blank">
                 GET /api/agent <span>↗</span>
+              </a>
+              <a href="/api/ask" target="_blank">
+                POST /api/ask <span>↗</span>
+              </a>
+              <a href="/api/wallets" target="_blank">
+                GET /api/wallets <span>↗</span>
+              </a>
+              <a href="/api/submissions" target="_blank">
+                POST /api/submissions <span>↗</span>
               </a>
             </div>
           </div>
@@ -974,8 +1165,12 @@ export default function Home() {
         <div className="navLinks">
           <a href="#pulse">Network</a>
           <a href="#services">Services</a>
+          <a href="#identity">Identity</a>
           <a href="#evidence">Evidence</a>
           <a href="#methodology">Methodology</a>
+          <button className="navSubmit" onClick={() => setSubmissionOpen(true)}>
+            Submit a service
+          </button>
         </div>
         <div className="status">
           <span
@@ -1034,9 +1229,9 @@ export default function Home() {
                 onChange={(event) => setQuestion(event.target.value)}
                 rows={3}
               />
-              <button type="submit" aria-label="Ask question">
-                {justAnswered ? "Answered ✓" : "Ask"}{" "}
-                {!justAnswered && <span>↗</span>}
+              <button type="submit" aria-label="Ask question" disabled={answering}>
+                {answering ? "Analyzing…" : justAnswered ? "Answered ✓" : "Ask"}{" "}
+                {!answering && !justAnswered && <span>↗</span>}
               </button>
             </form>
             <div className="askSuggestions" aria-label="Suggested questions">
@@ -1054,7 +1249,7 @@ export default function Home() {
             </div>
             {!hasAsked ? (
               <p className="askHint">
-                Ask about a protocol, metric, comparison, or time period.
+                Ask about metrics, growth, services, anomalies, cohorts, wallets, or evidence coverage.
               </p>
             ) : (
               <div
@@ -1066,9 +1261,9 @@ export default function Home() {
                 <div className="answerHead">
                   <span>{answer.eyebrow}</span>
                   <span className={answer.limited ? "coverageLimited" : "verified"}>
-                    {answer.limited
+                    {answer.status ?? (answer.limited
                       ? "Coverage limit disclosed"
-                      : "Verified calculation"}
+                      : "Verified calculation")}
                   </span>
                 </div>
                 <div className="answerValueRow">
@@ -1087,40 +1282,33 @@ export default function Home() {
                   )}
                 </div>
                 <p className="comparison">{answer.comparison}</p>
-                <LabeledBarChart
-                  className="answerChart"
-                  days={answer.days}
-                  yAxisTitle={
-                    answer.metric === "volume"
-                      ? "USD volume per bucket"
-                      : answer.metric === "average"
-                        ? "Average USD payment per bucket"
-                        : answer.metric === "buyers"
-                          ? "Buyer identifiers per bucket"
-                          : answer.metric === "servers"
-                            ? "Recipient identifiers per bucket"
-                            : "Successful transactions per bucket"
-                  }
-                  series={[
-                    {
-                      key: answer.protocol,
-                      label: PROTOCOL_LABELS[answer.protocol],
-                      className:
-                        answer.protocol === "mpp"
-                          ? "seriesMpp"
-                          : answer.protocol === "x402"
-                            ? "seriesX402"
-                            : "seriesAll",
-                      buckets: answerBuckets,
-                      metric: answer.metric,
-                    },
-                  ]}
-                />
+                {answer.visualization !== "none" && answerSeries.some((series) => series.buckets.length) && (
+                  <LabeledBarChart
+                    className="answerChart"
+                    days={answer.days}
+                    yAxisTitle={
+                      answer.metric === "volume"
+                        ? "USD volume per bucket"
+                        : answer.metric === "average"
+                          ? "Average USD payment per bucket"
+                          : answer.metric === "buyers"
+                            ? "Active payer addresses per bucket"
+                            : answer.metric === "servers"
+                              ? "Active server identities per bucket"
+                              : "Successful transactions per bucket"
+                    }
+                    series={answerSeries}
+                  />
+                )}
                 <div className="formula">
                   <span>Calculation</span>
                   <code>{answer.formula}</code>
                 </div>
                 <p className="explanation">{answer.explanation}</p>
+                {answer.source && (
+                  <p className="answerSource">Source: {answer.source} · calculated from the latest loaded index snapshot.</p>
+                )}
+                {answerError && <p className="answerError">{answerError}</p>}
               </div>
             )}
           </div>
@@ -1164,7 +1352,7 @@ export default function Home() {
               </strong>
               <small>
                 {selectedProtocolData.live
-                  ? `${compact(selected.stats.totalTransactions / period)} per day`
+                  ? `${compact(selected.stats.totalTransactions / selectedPeriodDays)} per day`
                   : "Connecting to index"}
               </small>
             </article>
@@ -1188,18 +1376,18 @@ export default function Home() {
             </article>
             <article>
               <InfoTerm
-                label="Buyer identifiers"
+                label="Active payer addresses"
                 definition={
                   protocol === "all"
-                    ? "The sum of unique sender identifiers reported by each protocol. The same buyer may appear in both protocols."
-                    : "Unique sender identifiers that completed at least one payment in the selected protocol and window."
+                    ? "The sum of distinct payer addresses reported by each protocol. The same payer may appear in both protocols."
+                    : "Distinct network-normalized payer addresses that completed at least one payment in the selected protocol and window."
                 }
                 formula={
                   protocol === "all"
-                    ? "MPP unique senders + x402 unique buyers."
-                    : "Distinct successful-payment sender identifiers."
+                    ? "MPP active payer addresses + x402 active payer addresses."
+                    : "Distinct successful-payment payer addresses."
                 }
-                example="One agent using two wallets may be counted twice."
+                example="One actor using two wallets may be counted twice; several actors can also share one wallet."
               />
               <strong>
                 {selectedProtocolData.live
@@ -1210,23 +1398,23 @@ export default function Home() {
                 {selectedProtocolData.live
                   ? protocol === "all"
                     ? "Protocol-level sum"
-                    : "Unique senders"
+                    : "Distinct payer addresses"
                   : "Connecting to index"}
               </small>
             </article>
             <article>
               <InfoTerm
-                label="Resolved services"
-                definition="Named service-origin records available in the complete paginated directory for the selected protocol view."
-                formula="Count of indexed directory records, not raw recipient addresses."
-                example="One service can use several payment recipients but still resolve to one service origin."
+                label="Active server identities"
+                definition="Distinct protocol recipient identities that received at least one observed payment in the selected window."
+                formula="Count of distinct source-reported recipient identities with successful payments."
+                example="One service can use several recipient identities, so this is not a count of companies."
               />
               <strong>
-                {directoryLoading && !directory.total
-                  ? "…"
-                  : compact(directory.total)}
+                {selectedProtocolData.live
+                  ? compact(selected.stats.uniqueRecipients)
+                  : "—"}
               </strong>
-              <small>Paginated source coverage</small>
+              <small>{protocol === "all" ? "Protocol-level sum" : "Active recipients"}</small>
             </article>
           </div>
 
@@ -1239,33 +1427,23 @@ export default function Home() {
                   formula="Count of successful transactions per time bucket."
                   example="Taller bars indicate more payments during that bucket, not higher payment value."
                 />
-                <small>{period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
+                <small>{period === 0 ? `Available indexed history since ${coverageStart(selected.buckets)}` : period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
               </div>
               <div className="chartLegend" aria-label="Chart legend">
-                <span><i className="legendMpp" />MPP</span>
-                <span><i className="legendX402" />x402</span>
+                {(protocol === "all" || protocol === "mpp") && <span><i className="legendMpp" />MPP</span>}
+                {(protocol === "all" || protocol === "x402") && <span><i className="legendX402" />x402</span>}
               </div>
             </div>
             <LabeledBarChart
               days={period}
-              showTimezone
               yAxisTitle="Successful transactions per bucket"
-              series={[
-                {
-                  key: "mpp",
-                  label: "MPP",
-                  className: "seriesMpp",
-                  buckets: data.protocols.mpp.periods[selectedKey].buckets,
-                  metric: "transactions",
-                },
-                {
-                  key: "x402",
-                  label: "x402",
-                  className: "seriesX402",
-                  buckets: data.protocols.x402.periods[selectedKey].buckets,
-                  metric: "transactions",
-                },
-              ]}
+              series={(protocol === "all" ? ["mpp", "x402"] : [protocol]).map((item) => ({
+                key: item,
+                label: PROTOCOL_LABELS[item as ProtocolKey],
+                className: item === "mpp" ? "seriesMpp" : "seriesX402",
+                buckets: data.protocols[item as ProtocolKey].periods[selectedKey].buckets,
+                metric: "transactions" as const,
+              }))}
             />
           </div>
 
@@ -1275,21 +1453,21 @@ export default function Home() {
       <section className="indexDefinition" id="coverage">
         <div className="definitionLead">
           <span className="sectionNumber">What this index measures</span>
-          <h2>Open machine-payment activity, with the limits attached.</h2>
+          <h2>Machine-payment activity, measured clearly and honestly.</h2>
         </div>
         <div className="definitionBody">
           <p className="definitionIntro">
-            The Agentic Payments Index observes stablecoin payments made through
-            MPP and x402. These protocols are designed for machine commerce, but
-            protocol data alone does not prove whether the payer was an autonomous
-            agent, an application, or a person using software.
+            The Agentic Payments Index brings MPP and x402 stablecoin activity into
+            one comparable view. It shows what the payment data proves—and clearly
+            labels what it cannot prove about the person, application, or agent
+            behind a wallet.
           </p>
           <div className="definitionStates">
             <article>
               <span>01 / Observed</span>
               <strong>Protocol activity</strong>
               <p>
-                Transactions, settlement value, sender and recipient identifiers,
+                Transactions, settlement value, payer and recipient identifiers,
                 timestamps, and resolved service origins exposed by the public
                 indexes.
               </p>
@@ -1298,7 +1476,7 @@ export default function Home() {
               <span>02 / Not inferred</span>
               <strong>Agent identity</strong>
               <p>
-                Buyer counts are identifiers—not verified autonomous agents.
+                Payer counts are addresses—not verified autonomous agents.
                 Cross-protocol identities may overlap and are not deduplicated.
               </p>
             </article>
@@ -1341,7 +1519,7 @@ export default function Home() {
           <MetricCard
             label="Transactions"
             value={compact(selected.stats.totalTransactions)}
-            note={`${compact(selected.stats.totalTransactions / period)} / day`}
+            note={`${compact(selected.stats.totalTransactions / selectedPeriodDays)} / day`}
             definition="Successful protocol-indexed payment events observed during the selected time window."
             formula="Count of successful payment records."
             example="A retry is counted only if it appears as a separate successful payment record."
@@ -1355,35 +1533,31 @@ export default function Home() {
             example="A $2 and a $3 payment produce $5 of USD volume."
           />
           <MetricCard
-            label="Buyer identifiers"
+            label="Active payer addresses"
             value={compact(selected.stats.uniqueSenders)}
             note={protocol === "all" ? "Protocol-level sum" : "Unique senders"}
             definition={
               protocol === "all"
-                ? "The sum of unique sender identifiers reported by MPP and x402. Cross-protocol identity is not deduplicated."
-                : "Unique sender identifiers that completed at least one payment in this protocol and window."
+                ? "The sum of distinct payer addresses reported by MPP and x402. Cross-protocol identity is not deduplicated."
+                : "Distinct network-normalized payer addresses that completed at least one payment in this protocol and window."
             }
             formula={
               protocol === "all"
-                ? "MPP unique senders + x402 unique buyers."
-                : "Distinct successful-payment sender identifiers."
+                ? "MPP active payer addresses + x402 active payer addresses."
+                : "Distinct successful-payment payer addresses."
             }
-            example="One buyer using both protocols can appear twice in the combined view."
+            example="One actor using two wallets can appear twice; several actors can also share one wallet."
           />
           <MetricCard
-            label={
-              protocol === "all"
-                ? "Observed recipients"
-                : "Payment recipients"
-            }
+            label="Active server identities"
             value={compact(selected.stats.uniqueRecipients)}
             note={
               protocol === "all"
                 ? "Protocol-level sum; not companies"
-                : "Unique recipient identities"
+                : "Distinct active recipients"
             }
-            definition="Unique payment-recipient identifiers observed in the selected window. These are not necessarily distinct companies or services."
-            formula="Distinct recipient identifiers reported by the selected protocol indexes."
+            definition="Distinct protocol recipient identities that received at least one observed payment in the selected window. These are not necessarily distinct companies or services."
+            formula="Distinct active recipient identities reported by the selected protocol indexes."
             example="Several wallet addresses may belong to the same underlying service."
           />
         </div>
@@ -1400,7 +1574,7 @@ export default function Home() {
                 />
                 <strong>MPP vs x402</strong>
               </div>
-              <small>Same {period === 1 ? "24-hour" : `${period}-day`} window</small>
+              <small>Same {period === 0 ? "available-history" : period === 1 ? "24-hour" : `${period}-day`} window</small>
             </div>
             <div className="shareRows">
               <div className="shareRow">
@@ -1457,10 +1631,10 @@ export default function Home() {
                   label="Transaction velocity"
                   definition="The average number of successful transactions observed per day in the selected time window."
                   formula="Total successful transactions ÷ number of days."
-                  example={`${compact(selected.stats.totalTransactions)} ÷ ${period} = ${compact(Math.round(selected.stats.totalTransactions / period))} transactions per day.`}
+                  example={`${compact(selected.stats.totalTransactions)} ÷ ${Math.round(selectedPeriodDays)} days = ${compact(Math.round(selected.stats.totalTransactions / selectedPeriodDays))} transactions per day.`}
                 />
                 <strong>
-                  {compact(Math.round(selected.stats.totalTransactions / period))}
+                  {compact(Math.round(selected.stats.totalTransactions / selectedPeriodDays))}
                   <small> / day</small>
                 </strong>
               </div>
@@ -1518,7 +1692,7 @@ export default function Home() {
               </div>
               <div>
                 <dt>Data window</dt>
-                <dd>{period === 1 ? "24 hours" : `${period} days`}</dd>
+                <dd>{periodLabel(period)}</dd>
               </div>
             </dl>
           </article>
@@ -1530,11 +1704,24 @@ export default function Home() {
           <span className="sectionNumber">02 / Evidence state</span>
           <h2>Raw activity is not the same as real adoption.</h2>
           <p>
-            Every view states what was observed, what has been resolved to a
-            service, and which quality adjustments have—or have not—been
-            applied. We would rather publish a smaller defensible number than a
-            larger ambiguous one.
+            Every view separates observed payment events, active identities,
+            named directory records, and quality adjustments. We publish the
+            defensible number—and the evidence boundary that comes with it.
           </p>
+          <div className="periodControl evidencePeriod" aria-label="Evidence time period">
+            {PERIODS.map((item) => (
+              <button
+                key={item.days}
+                className={period === item.days ? "active" : ""}
+                onClick={() => {
+                  setPeriod(item.days);
+                  setServicePage(1);
+                }}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
         </div>
         <div className="evidenceGrid">
           <article>
@@ -1546,14 +1733,12 @@ export default function Home() {
             </p>
           </article>
           <article>
-            <span className="evidenceState resolvedEvidence">Resolved</span>
-            <small>Queryable service directory</small>
-            <strong>
-              {directoryLoading ? "…" : compact(directory.total)}
-            </strong>
+            <span className="evidenceState resolvedEvidence">Observed</span>
+            <small>Active server identities</small>
+            <strong>{compact(selected.stats.uniqueRecipients)}</strong>
             <p>
-              Protocol-level service records available across every directory
-              page—not raw recipient identities.
+              Distinct recipient identities paid in this window—not companies,
+              and not the named service-directory count.
             </p>
           </article>
           <article>
@@ -1573,12 +1758,28 @@ export default function Home() {
         <div className="sectionHeading">
           <div>
             <span className="sectionNumber">03 / Service economy</span>
-            <h2>Where {PROTOCOL_LABELS[protocol]} agents spend</h2>
+            <h2>Where {PROTOCOL_LABELS[protocol]} payments go</h2>
           </div>
-          <p className="sectionIntro">
-            Complete source-backed pagination, ranked by observed activity in
-            the selected period.
-          </p>
+          <div className="servicesHeadingAside">
+            <div className="periodControl" aria-label="Service directory time period">
+              {PERIODS.map((item) => (
+                <button
+                  key={item.days}
+                  className={period === item.days ? "active" : ""}
+                  onClick={() => {
+                    setPeriod(item.days);
+                    setServicePage(1);
+                  }}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p className="sectionIntro">
+              Complete source-backed pagination, ranked by observed activity in
+              the selected period.
+            </p>
+          </div>
         </div>
 
         <div className="directorySummary">
@@ -1601,7 +1802,7 @@ export default function Home() {
             </div>
             <div>
               <dt>Window</dt>
-              <dd>{period === 1 ? "24 hours" : `${period} days`}</dd>
+              <dd>{period === 0 ? `Since ${coverageStart(selected.buckets)}` : periodLabel(period)}</dd>
             </div>
           </dl>
           <p>
@@ -1644,7 +1845,7 @@ export default function Home() {
                       setServicePage(1);
                     }}
                   >
-                    Agents {sort === "buyers" ? "↓" : ""}
+                    Payer addresses {sort === "buyers" ? "↓" : ""}
                   </button>
                 </th>
                 <th>Latest</th>
@@ -1758,9 +1959,47 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="section identitySection" id="identity">
+        <div className="identityLead">
+          <div>
+            <span className="sectionNumber">04 / Identity intelligence</span>
+            <h2>Know what is a wallet, a service, and an agent claim.</h2>
+          </div>
+          <p>
+            Payment rails reveal addresses and recipients. They do not automatically
+            reveal a person, wallet provider, or autonomous agent. The Index keeps
+            those claims separate and attaches confidence to every attribution.
+          </p>
+        </div>
+        <div className="identityGrid">
+          <article>
+            <span>Address layer</span>
+            <strong>Active payer + server identities</strong>
+            <p>Live source-reported identifiers, with cross-wallet and cross-protocol duplication disclosed.</p>
+          </article>
+          <article>
+            <span>Wallet layer</span>
+            <strong>Open attribution registry</strong>
+            <p>Provider, account type, and facilitator stay separate. Coverage remains unavailable until transaction-level matching is live.</p>
+            <a href="/api/wallets" target="_blank">Inspect the registry ↗</a>
+          </article>
+          <article>
+            <span>Autonomy layer</span>
+            <strong>Unknown until evidenced</strong>
+            <p>Protocol use alone is not proof of autonomous execution. Signed attestations can upgrade a payment from Unknown.</p>
+          </article>
+          <article className="identityAction">
+            <span>Service layer</span>
+            <strong>Verify your service</strong>
+            <p>Prove domain control and protocol-endpoint reachability before a submitted service can become active.</p>
+            <button onClick={() => setSubmissionOpen(true)}>Submit a service ↗</button>
+          </article>
+        </div>
+      </section>
+
       <section className="methodology" id="methodology">
         <div>
-          <span className="sectionNumber">04 / Methodology</span>
+          <span className="sectionNumber">05 / Methodology</span>
           <h2>Evidence you can audit.</h2>
         </div>
         <div className="methodGrid">
@@ -1820,10 +2059,86 @@ export default function Home() {
           . Not affiliated with either index.
         </p>
         <span>
-          Updated{" "}
-          {data.asOf ? `${data.asOf.slice(11, 16)} UTC` : "when data connects"}
+          Times shown in UTC · Updated{" "}
+          {data.asOf ? data.asOf.slice(11, 16) : "when data connects"}
         </span>
       </footer>
+      {submissionOpen && (
+        <div
+          className="modalBackdrop"
+          role="presentation"
+          onMouseDown={(event) => {
+            if (event.target === event.currentTarget) setSubmissionOpen(false);
+          }}
+        >
+          <section className="submissionModal" role="dialog" aria-modal="true" aria-labelledby="submission-title">
+            <div className="submissionHead">
+              <div>
+                <span className="sectionNumber">Service registry</span>
+                <h2 id="submission-title">Submit a service</h2>
+              </div>
+              <button className="modalClose" onClick={() => setSubmissionOpen(false)} aria-label="Close submission dialog">×</button>
+            </div>
+            {!submissionResult ? (
+              <form className="submissionForm" onSubmit={submitService}>
+                <label>
+                  <span>Service name</span>
+                  <input required value={submissionForm.serviceName} onChange={(event) => setSubmissionForm({ ...submissionForm, serviceName: event.target.value })} />
+                </label>
+                <label>
+                  <span>Canonical HTTPS URL</span>
+                  <input required type="url" placeholder="https://example.com" value={submissionForm.canonicalUrl} onChange={(event) => setSubmissionForm({ ...submissionForm, canonicalUrl: event.target.value })} />
+                </label>
+                <div className="submissionFormRow">
+                  <label>
+                    <span>Protocol</span>
+                    <select value={submissionForm.protocol} onChange={(event) => setSubmissionForm({ ...submissionForm, protocol: event.target.value })}>
+                      <option value="mpp">MPP</option>
+                      <option value="x402">x402</option>
+                      <option value="both">MPP + x402</option>
+                    </select>
+                  </label>
+                  <label>
+                    <span>Network</span>
+                    <input required value={submissionForm.network} onChange={(event) => setSubmissionForm({ ...submissionForm, network: event.target.value })} />
+                  </label>
+                </div>
+                <label>
+                  <span>Live protocol endpoint</span>
+                  <input required type="url" placeholder="https://api.example.com/pay" value={submissionForm.protocolEndpoint} onChange={(event) => setSubmissionForm({ ...submissionForm, protocolEndpoint: event.target.value })} />
+                </label>
+                <label>
+                  <span>Contact email (kept private)</span>
+                  <input required type="email" value={submissionForm.contactEmail} onChange={(event) => setSubmissionForm({ ...submissionForm, contactEmail: event.target.value })} />
+                </label>
+                <p className="submissionNote">Submitting creates a domain-control challenge. It does not automatically add or endorse the service.</p>
+                {submissionError && <p className="submissionError">{submissionError}</p>}
+                <button className="submissionPrimary" type="submit" disabled={submissionLoading}>
+                  {submissionLoading ? "Creating challenge…" : "Create verification challenge"}
+                </button>
+              </form>
+            ) : (
+              <div className="verificationFlow">
+                <span className="verificationStatus">{submissionResult.status}</span>
+                <h3>Publish this verification file</h3>
+                <p>Host the following JSON at <code>{submissionResult.verification.url}</code>, then run the check.</p>
+                <pre>{JSON.stringify(submissionResult.verification.body, null, 2)}</pre>
+                <p className="submissionNote">{submissionResult.verificationMessage ?? submissionResult.verification.note}</p>
+                {submissionError && <p className="submissionError">{submissionError}</p>}
+                <div className="verificationActions">
+                  <button className="submissionPrimary" onClick={verifyService} disabled={submissionLoading || submissionResult.status === "verified"}>
+                    {submissionLoading ? "Checking…" : submissionResult.status === "verified" ? "Verified ✓" : "Verify now"}
+                  </button>
+                  <button onClick={() => {
+                    setSubmissionResult(null);
+                    setSubmissionError("");
+                  }}>Start another</button>
+                </div>
+              </div>
+            )}
+          </section>
+        </div>
+      )}
       <ViewToggle machineMode={false} onChange={setMachineMode} />
     </main>
   );

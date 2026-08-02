@@ -1,19 +1,25 @@
 # The Agentic Payments Index
 
-**Agentic GDP, made legible.**
+**The machine economy, made legible.**
 
 The Agentic Payments Index is an open evidence layer for machine-native
 stablecoin payments. It combines MPP and x402 activity, makes resolved services
-browsable across every source page, and answers bounded analytical questions
-with the formula and coverage limitation attached.
+browsable across every source page, and answers analytical questions with the
+formula, provenance, and material coverage limitation attached.
 
 ## What the index publishes
 
-- Protocol-level 24-hour, 7-day, and 30-day payment aggregates.
+- Protocol-level 24-hour, 7-day, 30-day, and available-history payment aggregates.
 - MPP and x402 views plus a clearly disclosed combined view.
 - Complete paginated resolved-service directories for the selected window.
-- Plain-English calculations for volume, transaction count, average payment
-  size, paying addresses, recipients, and leading services.
+- A live analysis endpoint for totals, averages, protocol comparisons, trends,
+  rankings, concentration, and measured anomalies.
+- Explicit evidence-gated responses for cohorts, wallet attribution, and
+  autonomous execution when identity-level data is not yet available.
+- Active payer addresses and active server identities, never relabelled as
+  people, companies, or autonomous agents without supporting evidence.
+- A persistent service-submission flow with domain-control and endpoint checks.
+- An open wallet-attribution registry with confidence states.
 - A Human interface and a Machine interface backed by public JSON endpoints.
 - Explicit metric states: raw, resolved, and quality-adjusted.
 
@@ -37,6 +43,10 @@ results.
 
 - `GET /api/network` — aggregates and time-series buckets.
 - `GET /api/services` — paginated service origins.
+- `POST /api/ask` — deterministic, evidence-aware question answering.
+- `GET /api/wallets` — wallet attribution registry and coverage state.
+- `POST /api/submissions` — service verification challenge creation.
+- `POST /api/submissions/verify` — domain and endpoint verification.
 - `GET /api/agent` — machine manifest, field states, provenance, and endpoint
   contract.
 
@@ -45,7 +55,7 @@ The service endpoint accepts:
 | Parameter | Values |
 |---|---|
 | `protocol` | `all`, `mpp`, `x402` |
-| `days` | `1`, `7`, `30` |
+| `days` | `0` (all available history), `1`, `7`, `30` |
 | `sort` | `transactions`, `volume`, `buyers` |
 | `page` | integer starting at `1` |
 | `pageSize` | integer from `10` to `50` |
@@ -73,7 +83,8 @@ Contributions are welcome, especially:
 - source-backed research notes.
 
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and
-[docs/METHODOLOGY.md](docs/METHODOLOGY.md) before opening a pull request.
+[docs/METHODOLOGY.md](docs/METHODOLOGY.md) before opening a pull request. The
+approved vNext product contract is in [docs/VNEXT_SPEC.md](docs/VNEXT_SPEC.md).
 
 ## License
 

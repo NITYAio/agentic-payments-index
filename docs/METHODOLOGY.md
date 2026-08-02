@@ -1,13 +1,22 @@
 # Methodology
 
-Status: `0.2 — raw and resolved observation layer`
+Status: `0.3 — live aggregates, identity semantics, and evidence-gated analysis`
 
 ## Metric states
 
 ### Raw
 
-Protocol-indexed successful transactions, USD value, sender identities,
+Protocol-indexed successful transactions, USD value, payer addresses,
 recipient identities, and time-series buckets. Raw does not mean organic.
+
+**Active payer addresses** are distinct network-normalized payer addresses in
+the selected source and window. They are not unique people or verified agents.
+One actor may use several addresses, several actors may share an address, and
+combined protocol totals may overlap.
+
+**Active server identities** are distinct recipient identities paid in the
+selected window. They are not the same as named indexed service records and are
+not necessarily unique companies.
 
 ### Resolved
 
@@ -52,14 +61,38 @@ The deterministic question layer currently supports:
 - total payment volume;
 - successful transaction count;
 - average payment size;
-- paying sender identities;
-- recipient identities;
+- active payer addresses;
+- active server identities;
 - leading services;
 - MPP versus x402 comparisons;
-- 24-hour, 7-day, and 30-day windows.
+- within-window trend calculations;
+- measured dated anomalies;
+- 24-hour, 7-day, 30-day, and all available-history windows.
 
-A request for a non-overlapping previous period is rejected rather than
-silently compared with an overlapping rolling aggregate.
+Identity-level cohort retention, wallet-provider share, and autonomous
+execution are evidence-gated. The current aggregate feeds cannot support those
+calculations, so the response names the missing evidence instead of estimating
+it. A causal explanation for a spike is also withheld unless contributor or
+external evidence supports it.
+
+## Wallet and autonomy evidence
+
+Wallet attribution keeps account type, wallet provider, and facilitator
+separate. Each rule is labelled Verified, Deterministic, Declared, Inferred, or
+Unknown. Provider share is not published until independently indexed payment
+identities can be evaluated against the open registry.
+
+Autonomous execution is a separate claim. MPP and x402 can be used by a person,
+an application, or an agent. A payment remains Unknown unless signed execution
+attestations or equivalent evidence justify a stronger classification.
+
+## Service verification
+
+Service submissions prove domain control by publishing a unique challenge at
+`/.well-known/agentic-payments-index.json`. The verifier also checks HTTPS and
+the submitted protocol endpoint. This proves control and reachability, not the
+identity of a legal entity. Activation additionally requires observed activity
+and maintainer review.
 
 ## Planned quality adjustment
 

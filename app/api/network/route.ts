@@ -1,4 +1,4 @@
-type PeriodKey = "1" | "7" | "30";
+type PeriodKey = "0" | "1" | "7" | "30";
 type ProtocolKey = "mpp" | "x402";
 
 type Stats = {
@@ -84,7 +84,7 @@ type X402Seller = {
 
 const MPP_UPSTREAM = "https://mppscan.com/api/trpc";
 const X402_UPSTREAM = "https://www.x402scan.com/api/trpc";
-const PERIOD_KEYS: PeriodKey[] = ["1", "7", "30"];
+const PERIOD_KEYS: PeriodKey[] = ["0", "1", "7", "30"];
 
 function emptyStats(): Stats {
   return {
@@ -101,11 +101,12 @@ function emptyProtocol(source: string, disclosure: string): ProtocolData {
     live: false,
     disclosure,
     periods: {
+      "0": { stats: emptyStats(), buckets: [] },
       "1": { stats: emptyStats(), buckets: [] },
       "7": { stats: emptyStats(), buckets: [] },
       "30": { stats: emptyStats(), buckets: [] },
     },
-    services: { "1": [], "7": [], "30": [] },
+    services: { "0": [], "1": [], "7": [], "30": [] },
   };
 }
 
@@ -121,7 +122,7 @@ function trpcBatchInput(inputs: Array<Record<string, unknown>>) {
   );
 }
 
-async function getMppPeriod(days: 1 | 7 | 30) {
+async function getMppPeriod(days: 0 | 1 | 7 | 30) {
   const input = encodeURIComponent(
     JSON.stringify({
       "0": { json: { timeframeDays: days } },
@@ -148,7 +149,7 @@ async function getMppPeriod(days: 1 | 7 | 30) {
   };
 }
 
-async function getMppServices(days: 1 | 7 | 30) {
+async function getMppServices(days: 0 | 1 | 7 | 30) {
   const response = await fetch(
     `${MPP_UPSTREAM}/servers.list?batch=1&input=${encodeURIComponent(
       JSON.stringify({
@@ -181,11 +182,13 @@ async function getMppServices(days: 1 | 7 | 30) {
 }
 
 async function loadMpp(): Promise<ProtocolData> {
-  const [day, week, month, dayServices, weekServices, monthServices] =
+  const [all, day, week, month, allServices, dayServices, weekServices, monthServices] =
     await Promise.all([
+      getMppPeriod(0),
       getMppPeriod(1),
       getMppPeriod(7),
       getMppPeriod(30),
+      getMppServices(0),
       getMppServices(1),
       getMppServices(7),
       getMppServices(30),
@@ -195,8 +198,9 @@ async function loadMpp(): Promise<ProtocolData> {
     source: "MPPScan public analytics",
     live: true,
     disclosure: "Observed successful MPP payments indexed by MPPScan.",
-    periods: { "1": day, "7": week, "30": month },
+    periods: { "0": all, "1": day, "7": week, "30": month },
     services: {
+      "0": allServices,
       "1": dayServices,
       "7": weekServices,
       "30": monthServices,
@@ -204,7 +208,7 @@ async function loadMpp(): Promise<ProtocolData> {
   };
 }
 
-async function getX402Period(days: 1 | 7 | 30) {
+async function getX402Period(days: 0 | 1 | 7 | 30) {
   const response = await fetch(
     `${X402_UPSTREAM}/public.stats.overall,public.stats.bucketed?batch=1&input=${trpcBatchInput(
       [
@@ -257,7 +261,7 @@ function cleanTitle(value: string | null, origin: string) {
   }
 }
 
-async function getX402Services(days: 1 | 7 | 30) {
+async function getX402Services(days: 0 | 1 | 7 | 30) {
   const response = await fetch(
     `${X402_UPSTREAM}/public.sellers.bazaar.list?input=${trpcInput({
       timeframe: days,
@@ -299,11 +303,13 @@ async function getX402Services(days: 1 | 7 | 30) {
 }
 
 async function loadX402(): Promise<ProtocolData> {
-  const [day, week, month, dayServices, weekServices, monthServices] =
+  const [all, day, week, month, allServices, dayServices, weekServices, monthServices] =
     await Promise.all([
+      getX402Period(0),
       getX402Period(1),
       getX402Period(7),
       getX402Period(30),
+      getX402Services(0),
       getX402Services(1),
       getX402Services(7),
       getX402Services(30),
@@ -314,8 +320,9 @@ async function loadX402(): Promise<ProtocolData> {
     live: true,
     disclosure:
       "Observed onchain x402 settlements indexed across supported facilitators.",
-    periods: { "1": day, "7": week, "30": month },
+    periods: { "0": all, "1": day, "7": week, "30": month },
     services: {
+      "0": allServices,
       "1": dayServices,
       "7": weekServices,
       "30": monthServices,
@@ -325,8 +332,15 @@ async function loadX402(): Promise<ProtocolData> {
 
 function mergeBuckets(days: number, sources: Bucket[][]): Bucket[] {
   const count = 48;
-  const end = Date.now();
-  const start = end - days * 86_400_000;
+  const timestamps = sources
+    .flat()
+    .map((bucket) => new Date(bucket.bucket_start).getTime())
+    .filter(Number.isFinite);
+  const end = days === 0 && timestamps.length ? Math.max(...timestamps) + 86_400_000 : Date.now();
+  const start =
+    days === 0 && timestamps.length
+      ? Math.min(...timestamps)
+      : end - days * 86_400_000;
   const width = (end - start) / count;
   const output = Array.from({ length: count }, (_, index) => ({
     bucket_start: new Date(start + index * width).toISOString(),
