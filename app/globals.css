@@ -1215,21 +1215,110 @@ button {
 
 .answerValueRow {
   display: flex;
+  flex-wrap: wrap;
   gap: 15px;
   align-items: flex-end;
   margin-top: 9px;
 }
 
 .answerValueRow strong {
-  overflow: hidden;
-  max-width: 78%;
+  overflow: visible;
+  max-width: 100%;
   font-size: clamp(2.5rem, 4.6vw, 4.75rem);
   font-weight: 480;
   line-height: 1;
   letter-spacing: -0.065em;
-  text-overflow: ellipsis;
+  overflow-wrap: anywhere;
+  text-overflow: clip;
+  white-space: normal;
+}
+
+.cohortHeatmap {
+  margin: 18px 0 8px;
+  border: 1px solid var(--line);
+  border-radius: 15px;
+  background: rgba(8, 6, 5, 0.18);
+}
+
+.cohortScroll {
+  overflow-x: auto;
+  padding: 12px;
+}
+
+.cohortHeatmap table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: separate;
+  border-spacing: 4px;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.58rem;
+}
+
+.cohortHeatmap th,
+.cohortHeatmap td {
+  min-width: 48px;
+  padding: 9px 8px;
+  border-radius: 7px;
+  text-align: center;
+}
+
+.cohortHeatmap thead th {
+  color: #887b74;
+  font-weight: 520;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.cohortHeatmap tbody th {
+  min-width: 92px;
+  color: #c9bdb5;
+  font-weight: 520;
+  text-align: left;
   white-space: nowrap;
 }
+
+.cohortHeatmap tbody th sup {
+  margin-left: 3px;
+  color: #ffbd84;
+}
+
+.cohortCell {
+  color: #fff6f0;
+  transition: transform 150ms ease, outline-color 150ms ease;
+}
+
+.cohortCell:hover {
+  z-index: 1;
+  outline: 1px solid rgba(255, 177, 143, 0.72);
+  transform: translateY(-1px);
+}
+
+.cohortCell.empty {
+  background: rgba(255, 255, 255, 0.025);
+  color: #554c47;
+}
+
+.cohortLegend {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  padding: 0 16px 13px;
+  color: #746861;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.49rem;
+}
+
+.cohortLegend i {
+  width: 18px;
+  height: 7px;
+  border-radius: 3px;
+  background: rgba(255, 107, 61, 0.12);
+}
+
+.cohortLegend i:nth-of-type(2) { background: rgba(255, 107, 61, 0.25); }
+.cohortLegend i:nth-of-type(3) { background: rgba(255, 107, 61, 0.42); }
+.cohortLegend i:nth-of-type(4) { background: rgba(255, 107, 61, 0.64); }
 
 .changePositive,
 .changeNegative {
@@ -2866,7 +2955,7 @@ footer > span {
   }
 
   .answerValueRow strong {
-    max-width: 72%;
+    max-width: 100%;
   }
 
   .questionRail {

@@ -1,0 +1,2 @@
+DROP INDEX `monthly_identity_segment_activity_unique`;--> statement-breakpoint
+CREATE UNIQUE INDEX `monthly_identity_segment_activity_unique` ON `monthly_identity_activity` (`segment_id`,`role`,`protocol`,`network`,`identity_hash`,`activity_month`,`evidence_level`);

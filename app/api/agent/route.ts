@@ -6,7 +6,7 @@ export async function GET(request: Request) {
       slug: "the-agentic-payments-index",
       description:
         "An open evidence layer for machine-native stablecoin payments across MPP and x402.",
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       access: {
         authentication: "none",
         mode: "read-only",
@@ -36,6 +36,18 @@ export async function GET(request: Request) {
           description:
             "Deterministic analysis with explicit evidence gates for identity-level questions.",
         },
+        cohorts: {
+          url: `${origin}/api/cohorts`,
+          description:
+            "Buyer and service identity retention from verified identity-level evidence, with activity/acquisition definitions and coverage limits.",
+          query: {
+            protocol: ["all", "mpp", "x402"],
+            role: ["payer", "payee"],
+            mode: ["activity", "acquisition"],
+            cohortMonth: "YYYY-MM (optional)",
+            months: "integer 1–24",
+          },
+        },
         wallets: {
           url: `${origin}/api/wallets`,
           description:
@@ -54,6 +66,19 @@ export async function GET(request: Request) {
           "Recipient activity associated with a public service-origin record.",
         adjusted:
           "Not yet applied. Current data may include tests, internal activity, and unresolved counterparties.",
+      },
+      identityLayer: {
+        privacy: "Raw payer and payee identities are hashed before storage and are never returned by the public cohort API.",
+        acceptedEvidence: [
+          "verified MPP Credential + Receipt history",
+          "successful x402 settlement responses with confirmed payment references",
+          "deterministically attributable confirmed-chain settlements",
+        ],
+        excludedEvidence: [
+          "rolling aggregate unique counts",
+          "ordinary stablecoin transfers without protocol attribution",
+          "declared or inferred identities in verified retention results",
+        ],
       },
       provenance: [
         {

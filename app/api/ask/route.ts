@@ -5,6 +5,11 @@ import {
   protocolForQuery,
   windowForQuery,
 } from "../../../lib/query-intent";
+import {
+  parseCohortRequest,
+  type CohortMatrix,
+} from "../../../lib/cohort-analysis";
+import { loadCohortMatrix } from "../../../lib/cohort-store";
 
 type ProtocolKey = "all" | "mpp" | "x402";
 type WindowDays = 0 | 1 | 7 | 30;
@@ -59,8 +64,9 @@ type Answer = {
   protocol: ProtocolKey;
   limited?: boolean;
   status?: string;
-  visualization?: "series" | "none";
+  visualization?: "series" | "cohort" | "none";
   chartProtocols?: ProtocolKey[];
+  cohort?: CohortMatrix;
   source: string;
   asOf: string;
 };
@@ -200,7 +206,7 @@ function findDatedBucket(question: string, buckets: Bucket[]) {
   );
 }
 
-function answerQuestion(
+async function answerQuestion(
   data: ExplorerData,
   question: string,
   selectedProtocol: ProtocolKey,
@@ -220,21 +226,80 @@ function answerQuestion(
   const common = { days, protocol, source, asOf: data.asOf };
 
   if (intent === "cohort") {
-    const seller = /\b(seller|service|server|recipient)\b/.test(text);
+    const request = parseCohortRequest(text, protocol);
+    let cohort: CohortMatrix | null = null;
+    try {
+      cohort = await loadCohortMatrix(request);
+    } catch {
+      cohort = null;
+    }
+    const seller = request.role === "payee";
+    if (cohort?.available) {
+      const requestedRow = request.cohortMonth
+        ? cohort.rows.find((row) => row.cohortMonth === request.cohortMonth)
+        : null;
+      const displayRow =
+        requestedRow ??
+        [...cohort.rows]
+          .reverse()
+          .find((row) => row.cohortSize > 0 && row.cells.length > 1) ??
+        cohort.rows.find((row) => row.cohortSize > 0);
+      const latestCell = displayRow?.cells.at(-1);
+      const monthLabel = displayRow
+        ? new Date(`${displayRow.cohortMonth}-01T00:00:00Z`).toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+        : "selected";
+      const comparisonMonth = latestCell
+        ? new Date(`${latestCell.calendarMonth}-01T00:00:00Z`).toLocaleDateString("en-US", {
+            month: "long",
+            year: "numeric",
+            timeZone: "UTC",
+          })
+        : cohort.completeThrough;
+      return {
+        ...common,
+        eyebrow: `${seller ? "Service" : "Payer"} ${request.mode} cohort · ${monthLabel}`,
+        value:
+          request.cohortMonth && latestCell
+            ? `${latestCell.rate.toFixed(1)}% retained`
+            : `${cohort.rows.filter((row) => row.cohortSize > 0).length} cohorts measured`,
+        change: null,
+        comparison:
+          displayRow && latestCell
+            ? `${latestCell.retained} of ${displayRow.cohortSize} identities returned in ${comparisonMonth} (M+${latestCell.offset})`
+            : `Verified identity history is complete through ${cohort.completeThrough}.`,
+        formula:
+          request.mode === "activity"
+            ? "Identities active again in month M+n ÷ identities active in cohort month M"
+            : "First-active identities active again in month M+n ÷ first-active identities in month M",
+        explanation: `${cohort.definition} ${cohort.limitation}`,
+        metric: seller ? "servers" : "buyers",
+        limited: Boolean(displayRow?.leftCensored),
+        status: displayRow?.leftCensored
+          ? "Verified; acquisition cohort is left-censored"
+          : "Verified identity calculation",
+        visualization: "cohort",
+        cohort,
+        source: `Agentic Payments Index identity layer${cohort.sources.length ? ` (${cohort.sources.join(", ")})` : ""}`,
+      };
+    }
     return {
       ...common,
-      eyebrow: `${seller ? "Service" : "Payer"} cohort retention · evidence gate`,
-      value: "Not yet measurable",
+      eyebrow: `${seller ? "Service" : "Payer"} cohort retention · collector status`,
+      value: "Awaiting identity backfill",
       change: null,
-      comparison: "The live aggregate feeds do not expose stable identity-level payment history.",
+      comparison: "The cohort engine is live, but no complete verified identity segment covers this request yet.",
       formula: seller
-        ? "Verified service identity × first-active month × returning-active month"
-        : "Network-normalized payer address × first-active month × returning-active month",
+        ? "Verified service identity × cohort month × returning-active month"
+        : "Hashed protocol identity × cohort month × returning-active month",
       explanation:
-        `A defensible ${seller ? "seller/service" : "buyer"} cohort needs independently stored transaction-level identities across the full requested history. Rolling unique counts cannot be joined into retention cohorts. The direct-chain history collector is the required next evidence layer; current totals remain queryable now.`,
+        `The storage, privacy-preserving identity normalization, idempotent ingestion, and cohort calculation layers are ready. A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified MPP receipt or x402 settlement history has been backfilled; rolling aggregate counts remain excluded.`,
       metric: seller ? "servers" : "buyers",
       limited: true,
-      status: "Identity history required",
+      status: "Backfill required",
       visualization: "none",
     };
   }
@@ -505,8 +570,9 @@ export async function GET() {
       "within-window trends",
       "service rankings",
       "measured anomalies",
+      "cohort retention when verified identity coverage is available",
     ],
-    evidenceGates: ["cohort retention", "wallet attribution", "autonomous execution"],
+    evidenceGates: ["cohort retention before identity backfill", "wallet attribution", "autonomous execution"],
   });
 }
 
@@ -526,7 +592,7 @@ export async function POST(request: Request) {
     }
     const snapshotResponse = await getNetworkSnapshot();
     const snapshot = (await snapshotResponse.json()) as ExplorerData;
-    const answer = answerQuestion(
+    const answer = await answerQuestion(
       snapshot,
       question,
       parseProtocol(body.protocol),

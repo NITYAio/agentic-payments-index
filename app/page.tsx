@@ -81,6 +81,31 @@ type SubmissionResult = {
   };
 };
 
+type CohortMatrix = {
+  available: boolean;
+  role: "payer" | "payee";
+  protocol: ProtocolKey;
+  mode: "activity" | "acquisition";
+  rows: Array<{
+    cohortMonth: string;
+    cohortSize: number;
+    cells: Array<{
+      offset: number;
+      calendarMonth: string;
+      retained: number;
+      rate: number;
+    }>;
+    leftCensored: boolean;
+  }>;
+  columns: number[];
+  coverageStart: string | null;
+  coverageEnd: string | null;
+  completeThrough: string | null;
+  sources: string[];
+  definition: string;
+  limitation: string;
+};
+
 type Answer = {
   eyebrow: string;
   value: string;
@@ -93,8 +118,9 @@ type Answer = {
   protocol: ProtocolKey;
   limited?: boolean;
   status?: string;
-  visualization?: "series" | "none";
+  visualization?: "series" | "cohort" | "none";
   chartProtocols?: ProtocolKey[];
+  cohort?: CohortMatrix;
   source?: string;
   asOf?: string;
 };
@@ -328,7 +354,7 @@ function answerQuestion(
   if (/\b(cohort|retention|wallet|autonomous|autonomy)\b/.test(text)) {
     return {
       eyebrow: "Identity analysis · evidence required",
-      value: "Not yet measurable",
+      value: "Awaiting identity backfill",
       change: null,
       comparison: "The loaded aggregate snapshot does not contain identity-level history or attribution evidence.",
       formula: "Requires independently indexed payment identities over time",
@@ -730,6 +756,78 @@ function LabeledBarChart({
       </div>
       <div className="chartAxisMeta">
         <span>Date</span>
+      </div>
+    </div>
+  );
+}
+
+function displayMonth(month: string) {
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "short",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
+function CohortHeatmap({ matrix }: { matrix: CohortMatrix }) {
+  return (
+    <div
+      className="cohortHeatmap"
+      role="img"
+      aria-label={`${matrix.role === "payer" ? "Payer" : "Service"} ${matrix.mode} cohort retention`}
+    >
+      <div className="cohortScroll">
+        <table>
+          <thead>
+            <tr>
+              <th>Cohort</th>
+              <th>Identities</th>
+              {matrix.columns.map((offset) => (
+                <th key={offset}>M+{offset}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {matrix.rows.map((row) => (
+              <tr key={row.cohortMonth}>
+                <th>
+                  {displayMonth(row.cohortMonth)}
+                  {row.leftCensored ? <sup title="History begins in this cohort month">†</sup> : null}
+                </th>
+                <td>{compact(row.cohortSize)}</td>
+                {matrix.columns.map((offset) => {
+                  const cell = row.cells.find((item) => item.offset === offset);
+                  return (
+                    <td
+                      key={offset}
+                      className={cell ? "cohortCell" : "cohortCell empty"}
+                      style={
+                        cell
+                          ? { backgroundColor: `rgba(255, 107, 61, ${0.08 + (cell.rate / 100) * 0.58})` }
+                          : undefined
+                      }
+                      title={
+                        cell
+                          ? `${displayMonth(cell.calendarMonth)}: ${cell.retained} retained (${cell.rate.toFixed(1)}%)`
+                          : "Month not yet complete"
+                      }
+                    >
+                      {cell ? `${cell.rate.toFixed(cell.rate < 10 ? 1 : 0)}%` : "—"}
+                    </td>
+                  );
+                })}
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <div className="cohortLegend">
+        <span>Lower retention</span>
+        <i />
+        <i />
+        <i />
+        <i />
+        <span>Higher retention</span>
       </div>
     </div>
   );
@@ -1282,7 +1380,11 @@ export default function Home() {
                   )}
                 </div>
                 <p className="comparison">{answer.comparison}</p>
+                {answer.visualization === "cohort" && answer.cohort?.available && (
+                  <CohortHeatmap matrix={answer.cohort} />
+                )}
                 {answer.visualization !== "none" && answerSeries.some((series) => series.buckets.length) && (
+                  answer.visualization !== "cohort" &&
                   <LabeledBarChart
                     className="answerChart"
                     days={answer.days}
@@ -1306,7 +1408,12 @@ export default function Home() {
                 </div>
                 <p className="explanation">{answer.explanation}</p>
                 {answer.source && (
-                  <p className="answerSource">Source: {answer.source} · calculated from the latest loaded index snapshot.</p>
+                  <p className="answerSource">
+                    Source: {answer.source}
+                    {answer.cohort?.completeThrough
+                      ? ` · verified identity coverage through ${answer.cohort.completeThrough}.`
+                      : " · calculated from the latest loaded index snapshot."}
+                  </p>
                 )}
                 {answerError && <p className="answerError">{answerError}</p>}
               </div>
