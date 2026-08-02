@@ -614,7 +614,7 @@ export async function POST(request: Request) {
     if (!question || question.length > 500) {
       return Response.json(
         { error: "Question must contain between 1 and 500 characters." },
-        { status: 400 },
+        { status: 400, headers: responseHeaders },
       );
     }
     const snapshotResponse = await getNetworkSnapshot();
