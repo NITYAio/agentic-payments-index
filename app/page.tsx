@@ -1155,6 +1155,14 @@ export default function Home() {
 
     return (
       <main className="machineShell">
+        <aside className="publicBetaBar" aria-label="Public beta notice">
+          <strong>Public beta</strong>
+          <span>
+            Aggregate analytics are live. Identity history and cohort coverage
+            are being backfilled.
+          </span>
+          <a href="#machine-evidence">Coverage details ↓</a>
+        </aside>
         <nav className="machineTopbar">
           <a className="brand" href="#machine-top">
             <span className="brandMark" aria-hidden="true">
@@ -1212,7 +1220,7 @@ export default function Home() {
             <pre>{JSON.stringify(machinePayload, null, 2)}</pre>
           </div>
         </section>
-        <section className="machineSchema">
+        <section className="machineSchema" id="machine-evidence">
           <article>
             <span>01 / Observe</span>
             <strong>Raw activity</strong>
@@ -1245,6 +1253,14 @@ export default function Home() {
 
   return (
     <main>
+      <aside className="publicBetaBar" aria-label="Public beta notice">
+        <strong>Public beta</strong>
+        <span>
+          Aggregate analytics are live. Identity history and cohort coverage are
+          being backfilled.
+        </span>
+        <a href="#evidence">Coverage details ↓</a>
+      </aside>
       <nav className="topbar" aria-label="Primary navigation">
         <a
           className="brand"

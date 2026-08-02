@@ -23,6 +23,16 @@ export function generateMetadata(): Metadata {
     alternates: {
       canonical: "/",
     },
+    robots: {
+      index: false,
+      follow: false,
+      nocache: true,
+      googleBot: {
+        index: false,
+        follow: false,
+        noimageindex: true,
+      },
+    },
     openGraph: {
       title: "The Agentic Payments Index",
       description:

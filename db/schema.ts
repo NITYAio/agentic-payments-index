@@ -108,3 +108,18 @@ export const monthlyIdentityActivity = sqliteTable(
     index("monthly_identity_segment_idx").on(table.segmentId),
   ],
 );
+
+export const publicRateLimits = sqliteTable(
+  "public_rate_limits",
+  {
+    id: text("id").primaryKey(),
+    route: text("route").notNull(),
+    clientHash: text("client_hash").notNull(),
+    windowStart: integer("window_start").notNull(),
+    requestCount: integer("request_count").notNull().default(1),
+    updatedAt: text("updated_at").notNull(),
+  },
+  (table) => [
+    index("public_rate_limits_window_idx").on(table.route, table.windowStart),
+  ],
+);

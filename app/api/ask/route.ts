@@ -10,6 +10,10 @@ import {
   type CohortMatrix,
 } from "../../../lib/cohort-analysis";
 import { loadCohortMatrix } from "../../../lib/cohort-store";
+import {
+  checkPublicRateLimit,
+  rateLimitHeaders,
+} from "../../../lib/rate-limit";
 
 type ProtocolKey = "all" | "mpp" | "x402";
 type WindowDays = 0 | 1 | 7 | 30;
@@ -577,6 +581,29 @@ export async function GET() {
 }
 
 export async function POST(request: Request) {
+  const rateLimit = await checkPublicRateLimit(request, "ask", {
+    limit: 30,
+    windowSeconds: 600,
+  });
+  const responseHeaders = rateLimitHeaders(rateLimit);
+  if (!rateLimit.allowed) {
+    return Response.json(
+      {
+        error:
+          "You have reached the public-beta question limit. Please try again in a few minutes.",
+      },
+      {
+        status: 429,
+        headers: {
+          ...responseHeaders,
+          "Retry-After": String(
+            Math.max(1, Math.ceil((rateLimit.resetAt - Date.now()) / 1000)),
+          ),
+        },
+      },
+    );
+  }
+
   try {
     const body = (await request.json()) as {
       question?: unknown;
@@ -599,7 +626,7 @@ export async function POST(request: Request) {
       parseWindow(body.windowDays),
     );
     return Response.json(answer, {
-      headers: { "Cache-Control": "no-store" },
+      headers: { ...responseHeaders, "Cache-Control": "no-store" },
     });
   } catch (error) {
     return Response.json(
@@ -609,7 +636,7 @@ export async function POST(request: Request) {
             ? error.message
             : "The analysis service is temporarily unavailable.",
       },
-      { status: 502 },
+      { status: 502, headers: responseHeaders },
     );
   }
 }

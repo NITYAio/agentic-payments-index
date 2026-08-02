@@ -7,6 +7,11 @@ export async function GET(request: Request) {
       description:
         "An open evidence layer for machine-native stablecoin payments across MPP and x402.",
       schemaVersion: "0.4.0",
+      release: {
+        stage: "public-beta",
+        discovery: "unlisted",
+        identityHistory: "backfill-in-progress",
+      },
       access: {
         authentication: "none",
         mode: "read-only",

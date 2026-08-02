@@ -38,6 +38,8 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /MPP \+ x402/i);
   assert.match(html, /Ask the Index/i);
   assert.match(html, /Ask about metrics/i);
+  assert.match(html, /Public beta/i);
+  assert.match(html, /Identity history and cohort coverage are being backfilled/i);
   assert.match(html, /What this index measures/i);
   assert.match(html, /Times shown in UTC/i);
   assert.match(html, /Network pulse/i);
@@ -65,6 +67,8 @@ test("ships product metadata and removes starter dependencies", async () => {
   assert.match(page, /Available indexed history/i);
   assert.match(page, /\/api\/ask/i);
   assert.match(layout, /og-v5\.png/i);
+  assert.match(layout, /index:\s*false/i);
+  assert.match(layout, /follow:\s*false/i);
   assert.doesNotMatch(packageJson, /react-loading-skeleton/);
   await assert.rejects(access(new URL("../app/_sites-preview", projectRoot)));
 });

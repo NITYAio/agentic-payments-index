@@ -98,6 +98,40 @@ button {
   border: 0;
 }
 
+.publicBetaBar {
+  position: relative;
+  z-index: 21;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  min-height: 34px;
+  padding: 7px 4.5vw;
+  border-bottom: 1px solid rgba(255, 107, 61, 0.24);
+  background: rgba(255, 107, 61, 0.08);
+  color: #cbbdb5;
+  font-size: 0.7rem;
+}
+
+.publicBetaBar strong,
+.publicBetaBar a {
+  color: var(--mint);
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.64rem;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+}
+
+.publicBetaBar a {
+  margin-left: 4px;
+  color: var(--cream);
+  transition: color 160ms ease;
+}
+
+.publicBetaBar a:hover {
+  color: var(--mint);
+}
+
 .topbar {
   position: sticky;
   z-index: 20;
@@ -2859,6 +2893,25 @@ footer > span {
 }
 
 @media (max-width: 760px) {
+  .publicBetaBar {
+    align-items: flex-start;
+    justify-content: flex-start;
+    flex-wrap: wrap;
+    gap: 5px 9px;
+    padding: 9px 20px;
+    font-size: 0.66rem;
+    line-height: 1.45;
+  }
+
+  .publicBetaBar span {
+    flex: 1 1 calc(100% - 88px);
+  }
+
+  .publicBetaBar a {
+    flex-basis: 100%;
+    margin-left: 0;
+  }
+
   .topbar {
     grid-template-columns: 1fr auto;
     min-height: 64px;
