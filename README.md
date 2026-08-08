@@ -7,6 +7,11 @@ stablecoin payments. It combines MPP and x402 activity, makes resolved services
 browsable across every source page, and answers analytical questions with the
 formula, provenance, and material coverage limitation attached.
 
+Created by **Nityanand Sharma, founder of Simpl**, as an independent side
+project for operators, investors, researchers, protocol teams, and journalists.
+Read the public [About page](https://agenticpaymentsindex.org/about) and
+[protocol coverage map](https://agenticpaymentsindex.org/coverage).
+
 ## What the index publishes
 
 - Protocol-level 24-hour, 7-day, 30-day, and available-history payment aggregates.
@@ -22,6 +27,7 @@ formula, provenance, and material coverage limitation attached.
 - An open wallet-attribution registry with confidence states.
 - A Human interface and a Machine interface backed by public JSON endpoints.
 - Explicit metric states: raw, resolved, and quality-adjusted.
+- Reproducible live-answer links and downloadable insight cards for verified calculations.
 
 Quality-adjusted activity is not yet applied. Current totals may include
 testing, internal settlement, unresolved counterparties, or other inorganic
@@ -38,6 +44,10 @@ transaction represents independent economic demand.
 The project is independent and is not affiliated with either index. Source
 availability, definitions, and upstream corrections can change the displayed
 results.
+
+Read [DATA.md](DATA.md) for source acceptance, reconciliation, licensing, and
+submission rules. The Apache-2.0 code licence does not relicense upstream data,
+names, logos, or editorial content.
 
 ## Machine-readable endpoints
 
@@ -85,6 +95,8 @@ Contributions are welcome, especially:
 Read [CONTRIBUTING.md](CONTRIBUTING.md) and
 [docs/METHODOLOGY.md](docs/METHODOLOGY.md) before opening a pull request. The
 approved vNext product contract is in [docs/VNEXT_SPEC.md](docs/VNEXT_SPEC.md).
+Use the structured issue forms for data sources, corrections, methodology, and
+protocol coverage; use Discussions for open-ended research debate.
 
 ## License
 

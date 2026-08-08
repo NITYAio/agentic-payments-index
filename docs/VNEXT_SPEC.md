@@ -2,7 +2,7 @@
 
 Status: approved for implementation  
 Owner: Nityanand Sharma  
-Updated: 2026-08-01
+Updated: 2026-08-07
 
 ## Product promise
 
@@ -37,7 +37,7 @@ The public headline remains **“The machine economy, made legible.”** “Agen
 - **Transactions:** successful protocol-indexed payment events in the selected window.
 - **USD volume:** recorded stablecoin settlement value in the selected window.
 - **Average payment size:** USD volume divided by successful transactions.
-- **Transaction velocity:** successful transactions divided by the length of the selected window. For All, the denominator is the available indexed-history span.
+- **Average daily transactions:** successful transactions divided by the length of the selected window. For All, the denominator is the available indexed-history span.
 - **Active payer addresses:** distinct network-normalized payer addresses observed in the selected window. This is not a count of people or autonomous agents. One actor can use several addresses; several actors can share an address; combined protocol counts may overlap.
 - **Active server identities:** distinct protocol recipient identities that received at least one observed payment in the selected window. This is not the service-directory count and not necessarily a count of companies.
 - **Indexed service records:** named service origins available across all paginated source-directory pages. It is directory coverage, not the active-server metric.
@@ -59,6 +59,8 @@ Ask the Index is a deterministic data-analysis service, not a collection of prew
 - dated spike/anomaly measurement.
 
 Every answer includes the metric, protocol, period, formula or method, source context, and the limitation material to interpretation. A “why did this spike?” answer may identify measured contributors or magnitude; it must distinguish that from an externally verified cause.
+
+Verified calculations offer X, LinkedIn, copy-link, and downloadable-card actions. Shared links reconstruct a live query and therefore state that the answer is recomputed from the latest loaded data. Immutable answer snapshots require a later persistent evidence record.
 
 ### Coverage-gated analyses
 
@@ -137,6 +139,15 @@ Direct-chain results may only be labelled live after contract coverage, decoding
 - The public repository contains contribution, methodology, security, and data-source guidance.
 - Public read-only endpoints remain free in vNext. A paid API may later add higher limits, exports, alerts, or SLAs; underlying facts and methodology are not paywalled by default.
 - A separate data licence must be chosen before distributing a bulk derived dataset.
+- The About page names Nityanand Sharma, founder of Simpl, states why the Index exists, and routes corrections and methodology debate into public GitHub issues and Discussions.
+- `DATA.md` defines source eligibility, provenance, overlap, terms, and correction requirements. Issue forms turn source and methodology contributions into an auditable relationship history.
+- A concise monthly note records what changed, what the data does and does not prove, and the next open research questions.
+
+## Protocol coverage map
+
+MPP and x402 remain the only combined totals until another source exposes a comparable successful-payment event, settlement value, time window, identity definition, and deduplication rule. Virtuals ACP, AP2, UCP, Nevermined, and Skyfire are tracked separately by sector role and disclosure state. The product does not create an “Other” total by mixing payments, settlements, mandates, checkouts, and agent jobs.
+
+x402scan is the current consistent source for x402 cards and charts. Material differences with x402.org headline totals remain visible as reconciliation work; official headline figures are not silently substituted without reproducible scope and methodology.
 
 ## Cost and operations
 

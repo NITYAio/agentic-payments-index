@@ -3,6 +3,10 @@
 Thank you for helping make agent-payment data more accurate, explainable, and
 useful.
 
+Read [DATA.md](DATA.md) before proposing a source. It explains source eligibility,
+overlap checks, access terms, and the boundary between Apache-licensed code and
+third-party data.
+
 ## Principles
 
 1. Evidence beats narrative.
@@ -58,3 +62,7 @@ The founder and maintainers approve releases and methodology versions.
 Contributors do not receive production access by submitting code. Material
 changes to adjustment rules should be proposed publicly before they become the
 default.
+
+Contributors whose evidence or code is merged are acknowledged in the release
+notes. Protocol affiliation should be disclosed in the issue or pull request;
+affiliation is welcome and does not change the evidence standard.

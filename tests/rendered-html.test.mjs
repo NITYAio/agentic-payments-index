@@ -41,13 +41,36 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /Public beta/i);
   assert.match(html, /Identity history and cohort coverage are being backfilled/i);
   assert.match(html, /What this index measures/i);
-  assert.match(html, /Times shown in UTC/i);
+  assert.match(html, /Updated through/i);
   assert.match(html, /Network pulse/i);
   assert.match(html, /Active payer addresses/i);
   assert.match(html, /Active server identities/i);
   assert.match(html, /Identity intelligence/i);
   assert.match(html, /Submit a service/i);
+  assert.match(html, /Average daily transactions/i);
+  assert.doesNotMatch(html, /Transaction velocity/i);
+  assert.doesNotMatch(html, /Relative activity/i);
+  assert.doesNotMatch(html, /Signal \/ Average payment size/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
+});
+
+test("server-renders the named About and protocol coverage pages", async () => {
+  const [aboutResponse, coverageResponse] = await Promise.all([
+    render("/about"),
+    render("/coverage"),
+  ]);
+  assert.equal(aboutResponse.status, 200);
+  assert.equal(coverageResponse.status, 200);
+  const [about, coverage] = await Promise.all([
+    aboutResponse.text(),
+    coverageResponse.text(),
+  ]);
+  assert.match(about, /Nityanand Sharma/i);
+  assert.match(about, /founder of Simpl/i);
+  assert.match(about, /Submit data or a correction/i);
+  assert.match(coverage, /What the market discloses/i);
+  assert.match(coverage, /Virtuals ACP/i);
+  assert.match(coverage, /Why there is no.*Other.*total/i);
 });
 
 test("ships product metadata and removes starter dependencies", async () => {
@@ -66,6 +89,8 @@ test("ships product metadata and removes starter dependencies", async () => {
   assert.match(page, /Payer addresses/i);
   assert.match(page, /Available indexed history/i);
   assert.match(page, /\/api\/ask/i);
+  assert.match(page, /Copy live link/i);
+  assert.match(page, /Download card/i);
   assert.match(layout, /og-v5\.png/i);
   assert.match(layout, /index:\s*false/i);
   assert.match(layout, /follow:\s*false/i);

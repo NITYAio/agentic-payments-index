@@ -223,6 +223,41 @@ function relativeTime(dateString: string) {
   return `${Math.floor(minutes / 1440)}d ago`;
 }
 
+function exactTime(dateString: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(dateString));
+}
+
+function drawWrappedText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines: number,
+) {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (context.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+    if (lines.length === maxLines - 1) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  lines.forEach((item, index) => context.fillText(item, x, y + index * lineHeight));
+  return y + lines.length * lineHeight;
+}
+
 function percentageDelta(value: number, baseline: number) {
   if (!baseline) return null;
   return ((value - baseline) / baseline) * 100;
@@ -914,6 +949,7 @@ export default function Home() {
   const [answerError, setAnswerError] = useState("");
   const [answerRevision, setAnswerRevision] = useState(0);
   const [justAnswered, setJustAnswered] = useState(false);
+  const [shareStatus, setShareStatus] = useState("");
   const [sort, setSort] = useState<"transactions" | "volume" | "buyers">(
     "transactions",
   );
@@ -956,6 +992,32 @@ export default function Home() {
     return () => {
       active = false;
     };
+  }, []);
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    const sharedQuestion = parameters.get("q")?.trim();
+    if (!sharedQuestion) return;
+    const sharedProtocol = (["all", "mpp", "x402"].includes(parameters.get("protocol") ?? "")
+      ? parameters.get("protocol")
+      : "all") as ProtocolKey;
+    const requestedDays = Number(parameters.get("days"));
+    const sharedPeriod = ([0, 1, 7, 30].includes(requestedDays)
+      ? requestedDays
+      : 30) as 0 | 1 | 7 | 30;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setQuestion(sharedQuestion);
+      setProtocol(sharedProtocol);
+      setPeriod(sharedPeriod);
+      void runQuestion(sharedQuestion, sharedProtocol, sharedPeriod);
+    });
+    return () => {
+      active = false;
+    };
+    // A shared query should run once on initial navigation, not after every state update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -1037,11 +1099,15 @@ export default function Home() {
     mppSelected.totalTransactions + x402Selected.totalTransactions;
   const combinedVolume = mppSelected.totalVolume + x402Selected.totalVolume;
 
-  async function runQuestion(nextQuestion: string) {
+  async function runQuestion(
+    nextQuestion: string,
+    requestedProtocol = protocol,
+    requestedPeriod = period,
+  ) {
     const trimmed = nextQuestion.trim();
     if (!trimmed) return;
     setSubmittedQuestion(trimmed);
-    const nextProtocol = protocolForQuestion(trimmed, protocol);
+    const nextProtocol = protocolForQuestion(trimmed, requestedProtocol);
     setProtocol(nextProtocol);
     setRemoteAnswer(null);
     setAnswerError("");
@@ -1054,7 +1120,7 @@ export default function Home() {
         body: JSON.stringify({
           question: trimmed,
           protocol: nextProtocol,
-          windowDays: period,
+          windowDays: requestedPeriod,
         }),
       });
       if (!response.ok) throw new Error("Analysis request failed");
@@ -1076,6 +1142,73 @@ export default function Home() {
   function submitQuestion(event: FormEvent) {
     event.preventDefault();
     runQuestion(question);
+  }
+
+  function liveAnswerUrl() {
+    const url = new URL(window.location.origin);
+    url.searchParams.set("q", submittedQuestion);
+    url.searchParams.set("protocol", answer.protocol);
+    url.searchParams.set("days", String(answer.days));
+    url.hash = "ask-index";
+    return url.toString();
+  }
+
+  async function copyAnswerLink() {
+    await navigator.clipboard.writeText(liveAnswerUrl());
+    setShareStatus("Live answer link copied");
+    window.setTimeout(() => setShareStatus(""), 1800);
+  }
+
+  function shareAnswer(destination: "x" | "linkedin") {
+    const url = liveAnswerUrl();
+    const text = `${submittedQuestion} — ${answer.value} | The Agentic Payments Index`;
+    const shareUrl =
+      destination === "x"
+        ? `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+        : `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+    window.open(shareUrl, "_blank", "noopener,noreferrer,width=760,height=680");
+  }
+
+  function downloadAnswerCard() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 630;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const gradient = context.createLinearGradient(0, 0, 1200, 630);
+    gradient.addColorStop(0, "#120b09");
+    gradient.addColorStop(0.7, "#1b0d09");
+    gradient.addColorStop(1, "#37150c");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1200, 630);
+    context.strokeStyle = "rgba(255,107,61,.5)";
+    context.lineWidth = 2;
+    context.strokeRect(34, 34, 1132, 562);
+    context.fillStyle = "#ff6b3d";
+    context.font = "600 24px ui-monospace, monospace";
+    context.fillText("THE AGENTIC PAYMENTS INDEX", 82, 98);
+    context.fillStyle = "#a99a92";
+    context.font = "28px Arial, sans-serif";
+    const afterQuestion = drawWrappedText(context, submittedQuestion, 82, 180, 1010, 42, 3);
+    context.fillStyle = "#fff7ef";
+    context.font = "500 88px Arial, sans-serif";
+    const safeValue = answer.value.length > 24 ? `${answer.value.slice(0, 24)}…` : answer.value;
+    context.fillText(safeValue, 82, Math.max(355, afterQuestion + 82));
+    context.fillStyle = "#b7aaa2";
+    context.font = "26px Arial, sans-serif";
+    drawWrappedText(context, answer.comparison, 82, 475, 1010, 34, 2);
+    context.fillStyle = "#b8ed72";
+    context.font = "600 18px ui-monospace, monospace";
+    context.fillText("VERIFIED CALCULATION", 82, 557);
+    context.fillStyle = "#877870";
+    context.textAlign = "right";
+    context.fillText("agenticpaymentsindex.org", 1118, 557);
+    const link = document.createElement("a");
+    link.download = `agentic-payments-index-${Date.now()}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    setShareStatus("Insight card created");
+    window.setTimeout(() => setShareStatus(""), 1800);
   }
 
   async function submitService(event: FormEvent) {
@@ -1234,7 +1367,7 @@ export default function Home() {
           <article>
             <span>03 / Qualify</span>
             <strong>Adjustment state</strong>
-            <p>Unadjusted metrics are labelled until confidence rules ship.</p>
+            <p>Raw totals stay explicit until adjustment rules and confidence ranges ship.</p>
           </article>
           <article>
             <span>04 / Cite</span>
@@ -1259,7 +1392,7 @@ export default function Home() {
           Aggregate analytics are live. Identity history and cohort coverage are
           being backfilled.
         </span>
-        <a href="#evidence">Coverage details ↓</a>
+        <a href="/coverage">Coverage details ↗</a>
       </aside>
       <nav className="topbar" aria-label="Primary navigation">
         <a
@@ -1279,21 +1412,21 @@ export default function Home() {
         <div className="navLinks">
           <a href="#pulse">Network</a>
           <a href="#services">Services</a>
-          <a href="#identity">Identity</a>
-          <a href="#evidence">Evidence</a>
+          <a href="/coverage">Coverage</a>
+          <a href="/about">About</a>
           <a href="#methodology">Methodology</a>
-          <button className="navSubmit" onClick={() => setSubmissionOpen(true)}>
-            Submit a service
-          </button>
         </div>
-        <div className="status">
+        <div
+          className="status"
+          title={data.asOf ? `Updated through ${exactTime(data.asOf)} UTC` : undefined}
+        >
           <span
             className={selectedProtocolData.live ? "liveDot" : "previewDot"}
           />
           {loading
             ? "Connecting"
             : selectedProtocolData.live
-              ? "Live indexes"
+              ? `Near real-time · ${relativeTime(data.asOf)}`
               : "Data unavailable"}
         </div>
       </nav>
@@ -1314,6 +1447,9 @@ export default function Home() {
             </button>
           ))}
         </div>
+        <button className="protocolSubmit" onClick={() => setSubmissionOpen(true)}>
+          Submit a service
+        </button>
       </div>
 
       <section className="hero" id="top">
@@ -1327,7 +1463,7 @@ export default function Home() {
             <span>The machine economy,</span>
             <em>made legible.</em>
           </h1>
-          <div className="askDock heroAsk">
+          <div className="askDock heroAsk" id="ask-index">
             <div className="askDockLabel">
               <span className="spark">✦</span>
               <span>Ask the Index</span>
@@ -1430,6 +1566,16 @@ export default function Home() {
                       ? ` · verified identity coverage through ${answer.cohort.completeThrough}.`
                       : " · calculated from the latest loaded index snapshot."}
                   </p>
+                )}
+                {!answer.limited && (
+                  <div className="answerShare" aria-label="Share this answer">
+                    <span>Share this insight</span>
+                    <button type="button" onClick={copyAnswerLink}>Copy live link</button>
+                    <button type="button" onClick={() => shareAnswer("x")}>X</button>
+                    <button type="button" onClick={() => shareAnswer("linkedin")}>LinkedIn</button>
+                    <button type="button" onClick={downloadAnswerCard}>Download card</button>
+                    {shareStatus && <small role="status">{shareStatus}</small>}
+                  </div>
                 )}
                 {answerError && <p className="answerError">{answerError}</p>}
               </div>
@@ -1751,7 +1897,7 @@ export default function Home() {
             <div className="panelHeading">
               <div>
                 <InfoTerm
-                  label="Transaction velocity"
+                  label="Average daily transactions"
                   definition="The average number of successful transactions observed per day in the selected time window."
                   formula="Total successful transactions ÷ number of days."
                   example={`${compact(selected.stats.totalTransactions)} ÷ ${Math.round(selectedPeriodDays)} days = ${compact(Math.round(selected.stats.totalTransactions / selectedPeriodDays))} transactions per day.`}
@@ -1762,12 +1908,7 @@ export default function Home() {
                 </strong>
               </div>
               <div className="legend">
-                <span>
-                  <i className="legendMint" /> Transactions
-                </span>
-                <span>
-                  <i className="legendWhite" /> Relative activity
-                </span>
+                <span><i className="legendMint" /> Transactions</span>
               </div>
             </div>
             <LabeledBarChart
@@ -1793,9 +1934,8 @@ export default function Home() {
 
           <article className="signalPanel">
             <span className="signalLabel">
-              Signal /{" "}
               <InfoTerm
-                label="average payment size"
+                label="Average payment size"
                 definition="The mean USD value of successful observed payments in the selected window."
                 formula="Total USD volume ÷ successful transactions."
                 example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per payment.`}
@@ -1848,15 +1988,15 @@ export default function Home() {
         </div>
         <div className="evidenceGrid">
           <article>
-            <span className="evidenceState liveEvidence">Live</span>
-            <small>Observed settlement layer</small>
+            <span className="evidenceState liveEvidence">Source-reported</span>
+            <small>Successful transactions</small>
             <strong>{compact(selected.stats.totalTransactions)}</strong>
             <p>
               Successful protocol-indexed transactions in the selected window.
             </p>
           </article>
           <article>
-            <span className="evidenceState resolvedEvidence">Observed</span>
+            <span className="evidenceState resolvedEvidence">Source-reported</span>
             <small>Active server identities</small>
             <strong>{compact(selected.stats.uniqueRecipients)}</strong>
             <p>
@@ -1864,16 +2004,15 @@ export default function Home() {
               and not the named service-directory count.
             </p>
           </article>
-          <article>
-            <span className="evidenceState betaEvidence">Methodology beta</span>
-            <small>Quality adjustment</small>
-            <strong>Unadjusted</strong>
+          <aside className="qualityDisclosure">
+            <span>Data quality</span>
             <p>
-              Current totals still include testing, internal activity, and
-              unresolved counterparties. The classification model will publish
-              confidence ranges rather than silent exclusions.
+              These are raw observed totals. Testing, duplicate, internal, and
+              unresolved activity may be included. Adjusted estimates will only
+              appear after the rules, backfill, and confidence ranges are published.
             </p>
-          </article>
+            <a href="/coverage">See coverage and known limits ↗</a>
+          </aside>
         </div>
       </section>
 
@@ -2180,10 +2319,11 @@ export default function Home() {
             x402scan
           </a>
           . Not affiliated with either index.
+          {" "}<a href="/about">About</a> · <a href="/coverage">Coverage</a> ·{" "}
+          <a href="https://github.com/NITYAio/agentic-payments-index" target="_blank" rel="noreferrer">Contribute</a>
         </p>
         <span>
-          Times shown in UTC · Updated{" "}
-          {data.asOf ? data.asOf.slice(11, 16) : "when data connects"}
+          Updated through {data.asOf ? `${exactTime(data.asOf)} UTC` : "when data connects"}
         </span>
       </footer>
       {submissionOpen && (
