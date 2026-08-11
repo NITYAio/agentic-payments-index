@@ -12,7 +12,9 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "identity:ingest": "node scripts/ingest-identity-segment.mjs"
+    "identity:ingest": "node scripts/ingest-identity-segment.mjs",
+    "direct:collect": "node --env-file-if-exists=.env.local scripts/collect-direct-source.mjs",
+    "direct:registry": "node scripts/sync-x402-facilitators.mjs"
   },
   "dependencies": {
     "drizzle-orm": "0.45.2",

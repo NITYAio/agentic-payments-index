@@ -39,12 +39,15 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /Ask the Index/i);
   assert.match(html, /Ask about metrics/i);
   assert.match(html, /Public beta/i);
-  assert.match(html, /Identity history and cohort coverage are being backfilled/i);
+  assert.match(html, /Identity history and all-time coverage are being backfilled/i);
+  assert.match(html, /Independent Tempo \+ Base observations/i);
+  assert.match(html, /Not combined/i);
+  assert.match(html, /All-time direct-source backfill is in progress/i);
   assert.match(html, /What this index measures/i);
   assert.match(html, /Updated through/i);
   assert.match(html, /Network pulse/i);
   assert.match(html, /Active payer addresses/i);
-  assert.match(html, /Active server identities/i);
+  assert.match(html, /Active recipient addresses/i);
   assert.match(html, /Identity intelligence/i);
   assert.match(html, /Submit a service/i);
   assert.match(html, /Average daily transactions/i);
@@ -71,6 +74,16 @@ test("server-renders the named About and protocol coverage pages", async () => {
   assert.match(coverage, /What the market discloses/i);
   assert.match(coverage, /Virtuals ACP/i);
   assert.match(coverage, /Why there is no.*Other.*total/i);
+});
+
+test("server-renders the private direct-source verification surface", async () => {
+  const response = await render("/direct-preview");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Direct-source cutover review/i);
+  assert.match(html, /Primary evidence/i);
+  assert.match(html, /incompatible measurement units are deliberately not combined/i);
+  assert.match(html, /Loading verified evidence/i);
 });
 
 test("ships product metadata and removes starter dependencies", async () => {

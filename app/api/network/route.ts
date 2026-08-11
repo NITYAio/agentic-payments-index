@@ -1,3 +1,5 @@
+import { getD1 } from "../../../db";
+
 type PeriodKey = "0" | "1" | "7" | "30";
 type ProtocolKey = "mpp" | "x402";
 
@@ -32,39 +34,46 @@ type Service = {
   };
 };
 
+type PeriodData = {
+  stats: Stats;
+  buckets: Bucket[];
+  rangeStart: string | null;
+  rangeEnd: string | null;
+};
+
 type ProtocolData = {
   source: string;
   live: boolean;
   disclosure: string;
-  periods: Record<PeriodKey, { stats: Stats; buckets: Bucket[] }>;
+  measurementLabel: string;
+  volumeLabel: string;
+  volumeComparable: boolean;
+  periods: Record<PeriodKey, PeriodData>;
   services: Record<PeriodKey, Service[]>;
 };
 
-type MppBucket = {
-  bucket_start: string;
-  total_transactions: number;
-  total_volume: number;
-  unique_senders: number;
-  unique_recipients: number;
+type WindowRow = {
+  run_id: string;
+  protocol: ProtocolKey;
+  network: string;
+  range_start: string;
+  range_end: string;
+  transaction_count: number;
+  volume_usd_micros: number;
+  buyer_count: number;
+  seller_count: number;
+};
+
+type DailyRow = {
+  run_id: string;
+  activity_date: string;
+  transaction_count: number;
+  volume_usd_micros: number;
+  buyer_count: number;
+  seller_count: number;
 };
 
 type MppService = Omit<Service, "protocol" | "network">;
-
-type X402Stats = {
-  total_transactions: number;
-  total_amount: number;
-  unique_buyers: number;
-  unique_sellers: number;
-  latest_block_timestamp: string | null;
-};
-
-type X402Bucket = {
-  bucket_start: string;
-  total_transactions: number;
-  total_amount: number;
-  unique_buyers: number;
-  unique_sellers: number;
-};
 
 type X402Seller = {
   recipients: string[];
@@ -85,6 +94,7 @@ type X402Seller = {
 const MPP_UPSTREAM = "https://mppscan.com/api/trpc";
 const X402_UPSTREAM = "https://www.x402scan.com/api/trpc";
 const PERIOD_KEYS: PeriodKey[] = ["0", "1", "7", "30"];
+const DIRECT_PERIOD_KEYS: Array<Exclude<PeriodKey, "0">> = ["1", "7", "30"];
 
 function emptyStats(): Stats {
   return {
@@ -95,16 +105,29 @@ function emptyStats(): Stats {
   };
 }
 
-function emptyProtocol(source: string, disclosure: string): ProtocolData {
+function emptyPeriod(): PeriodData {
+  return { stats: emptyStats(), buckets: [], rangeStart: null, rangeEnd: null };
+}
+
+function emptyProtocol(
+  source: string,
+  disclosure: string,
+  measurementLabel: string,
+  volumeLabel: string,
+  volumeComparable = true,
+): ProtocolData {
   return {
     source,
     live: false,
     disclosure,
+    measurementLabel,
+    volumeLabel,
+    volumeComparable,
     periods: {
-      "0": { stats: emptyStats(), buckets: [] },
-      "1": { stats: emptyStats(), buckets: [] },
-      "7": { stats: emptyStats(), buckets: [] },
-      "30": { stats: emptyStats(), buckets: [] },
+      "0": emptyPeriod(),
+      "1": emptyPeriod(),
+      "7": emptyPeriod(),
+      "30": emptyPeriod(),
     },
     services: { "0": [], "1": [], "7": [], "30": [] },
   };
@@ -112,41 +135,6 @@ function emptyProtocol(source: string, disclosure: string): ProtocolData {
 
 function trpcInput(input: Record<string, unknown>) {
   return encodeURIComponent(JSON.stringify({ json: input }));
-}
-
-function trpcBatchInput(inputs: Array<Record<string, unknown>>) {
-  return encodeURIComponent(
-    JSON.stringify(
-      Object.fromEntries(inputs.map((input, index) => [index, { json: input }])),
-    ),
-  );
-}
-
-async function getMppPeriod(days: 0 | 1 | 7 | 30) {
-  const input = encodeURIComponent(
-    JSON.stringify({
-      "0": { json: { timeframeDays: days } },
-      "1": { json: { timeframeDays: days } },
-    }),
-  );
-  const response = await fetch(
-    `${MPP_UPSTREAM}/stats.protocolStats,stats.bucketed?batch=1&input=${input}`,
-    {
-      headers: {
-        accept: "application/json",
-        "x-trpc-source": "agentic-payments-index",
-      },
-    },
-  );
-  if (!response.ok) throw new Error(`MPP stats returned ${response.status}`);
-  const payload = (await response.json()) as [
-    { result: { data: { json: Stats } } },
-    { result: { data: { json: MppBucket[] } } },
-  ];
-  return {
-    stats: payload[0].result.data.json,
-    buckets: payload[1].result.data.json,
-  };
 }
 
 async function getMppServices(days: 0 | 1 | 7 | 30) {
@@ -179,71 +167,6 @@ async function getMppServices(days: 0 | 1 | 7 | 30) {
     protocol: "mpp" as const,
     network: "Tempo",
   }));
-}
-
-async function loadMpp(): Promise<ProtocolData> {
-  const [all, day, week, month, allServices, dayServices, weekServices, monthServices] =
-    await Promise.all([
-      getMppPeriod(0),
-      getMppPeriod(1),
-      getMppPeriod(7),
-      getMppPeriod(30),
-      getMppServices(0),
-      getMppServices(1),
-      getMppServices(7),
-      getMppServices(30),
-    ]);
-
-  return {
-    source: "MPPScan public analytics",
-    live: true,
-    disclosure: "Observed successful MPP payments indexed by MPPScan.",
-    periods: { "0": all, "1": day, "7": week, "30": month },
-    services: {
-      "0": allServices,
-      "1": dayServices,
-      "7": weekServices,
-      "30": monthServices,
-    },
-  };
-}
-
-async function getX402Period(days: 0 | 1 | 7 | 30) {
-  const response = await fetch(
-    `${X402_UPSTREAM}/public.stats.overall,public.stats.bucketed?batch=1&input=${trpcBatchInput(
-      [
-        { timeframe: days },
-        { timeframe: days, numBuckets: 48 },
-      ],
-    )}`,
-    {
-      headers: {
-        accept: "application/json",
-        "x-trpc-source": "agentic-payments-index",
-      },
-    },
-  );
-  if (!response.ok) throw new Error(`x402 stats returned ${response.status}`);
-  const payload = (await response.json()) as [
-    { result: { data: { json: X402Stats } } },
-    { result: { data: { json: X402Bucket[] } } },
-  ];
-  const stats = payload[0].result.data.json;
-  return {
-    stats: {
-      totalTransactions: stats.total_transactions,
-      totalVolume: stats.total_amount / 1_000_000,
-      uniqueSenders: stats.unique_buyers,
-      uniqueRecipients: stats.unique_sellers,
-    },
-    buckets: payload[1].result.data.json.map((bucket) => ({
-      bucket_start: bucket.bucket_start,
-      total_transactions: bucket.total_transactions,
-      total_volume: bucket.total_amount / 1_000_000,
-      unique_senders: bucket.unique_buyers,
-      unique_recipients: bucket.unique_sellers,
-    })),
-  };
 }
 
 function cleanTitle(value: string | null, origin: string) {
@@ -302,69 +225,125 @@ async function getX402Services(days: 0 | 1 | 7 | 30) {
   });
 }
 
-async function loadX402(): Promise<ProtocolData> {
-  const [all, day, week, month, allServices, dayServices, weekServices, monthServices] =
-    await Promise.all([
-      getX402Period(0),
-      getX402Period(1),
-      getX402Period(7),
-      getX402Period(30),
-      getX402Services(0),
-      getX402Services(1),
-      getX402Services(7),
-      getX402Services(30),
-    ]);
-
-  return {
-    source: "x402scan public analytics",
-    live: true,
-    disclosure:
-      "Observed onchain x402 settlements indexed across supported facilitators.",
-    periods: { "0": all, "1": day, "7": week, "30": month },
-    services: {
-      "0": allServices,
-      "1": dayServices,
-      "7": weekServices,
-      "30": monthServices,
-    },
-  };
+async function loadServiceDirectories() {
+  const requests = PERIOD_KEYS.flatMap((key) => {
+    const days = Number(key) as 0 | 1 | 7 | 30;
+    return [getMppServices(days), getX402Services(days)];
+  });
+  const results = await Promise.allSettled(requests);
+  const mpp = { "0": [], "1": [], "7": [], "30": [] } as Record<PeriodKey, Service[]>;
+  const x402 = { "0": [], "1": [], "7": [], "30": [] } as Record<PeriodKey, Service[]>;
+  PERIOD_KEYS.forEach((key, index) => {
+    const left = results[index * 2];
+    const right = results[index * 2 + 1];
+    if (left.status === "fulfilled") mpp[key] = left.value;
+    if (right.status === "fulfilled") x402[key] = right.value;
+  });
+  return { mpp, x402 };
 }
 
-function mergeBuckets(days: number, sources: Bucket[][]): Bucket[] {
-  const count = 48;
-  const timestamps = sources
-    .flat()
-    .map((bucket) => new Date(bucket.bucket_start).getTime())
-    .filter(Number.isFinite);
-  const end = days === 0 && timestamps.length ? Math.max(...timestamps) + 86_400_000 : Date.now();
-  const start =
-    days === 0 && timestamps.length
-      ? Math.min(...timestamps)
-      : end - days * 86_400_000;
-  const width = (end - start) / count;
-  const output = Array.from({ length: count }, (_, index) => ({
-    bucket_start: new Date(start + index * width).toISOString(),
-    total_transactions: 0,
-    total_volume: 0,
-    unique_senders: 0,
-    unique_recipients: 0,
-  }));
+function windowDurationDays(row: WindowRow) {
+  return (
+    (new Date(row.range_end).getTime() - new Date(row.range_start).getTime()) /
+    86_400_000
+  );
+}
 
+async function loadDirectProtocol(protocol: ProtocolKey): Promise<ProtocolData> {
+  const base =
+    protocol === "mpp"
+      ? emptyProtocol(
+          "Tempo direct chain evidence",
+          "Current-version MPP charges and settled sessions observed directly on Tempo. Testing, internal activity, and repeated identities may still be included.",
+          "Protocol-attributed payments",
+          "Payment value",
+        )
+      : emptyProtocol(
+          "Base direct chain evidence",
+          "USDC transfers involving the maintained x402 facilitator set on Base. These are facilitator-associated settlements and may include pass-through transfers; they are not assumed to be one payment each.",
+          "Facilitator-associated settlements",
+          "Raw USDC transfer value",
+        );
+  const d1 = await getD1();
+  const windowResult = await d1
+    .prepare(
+      `SELECT run_id, protocol, network, range_start, range_end,
+              transaction_count, volume_usd_micros, buyer_count, seller_count
+       FROM protocol_window_metrics
+       WHERE protocol = ?
+       ORDER BY range_end DESC`,
+    )
+    .bind(protocol)
+    .all<WindowRow>();
+
+  const selected = new Map<Exclude<PeriodKey, "0">, WindowRow>();
+  for (const row of windowResult.results) {
+    const days = Math.round(windowDurationDays(row));
+    const key = String(days) as Exclude<PeriodKey, "0">;
+    if (DIRECT_PERIOD_KEYS.includes(key) && !selected.has(key)) selected.set(key, row);
+  }
+
+  const runIds = [...selected.values()].map((row) => row.run_id);
+  const dailyResult = runIds.length
+    ? await d1
+        .prepare(
+          `SELECT run_id, activity_date, transaction_count, volume_usd_micros,
+                  buyer_count, seller_count
+           FROM daily_protocol_metrics
+           WHERE run_id IN (${runIds.map(() => "?").join(", ")})
+           ORDER BY activity_date ASC`,
+        )
+        .bind(...runIds)
+        .all<DailyRow>()
+    : { results: [] as DailyRow[] };
+
+  for (const key of DIRECT_PERIOD_KEYS) {
+    const row = selected.get(key);
+    if (!row) continue;
+    base.periods[key] = {
+      stats: {
+        totalTransactions: row.transaction_count,
+        totalVolume: row.volume_usd_micros / 1_000_000,
+        uniqueSenders: row.buyer_count,
+        uniqueRecipients: row.seller_count,
+      },
+      buckets: dailyResult.results
+        .filter((daily) => daily.run_id === row.run_id)
+        .map((daily) => ({
+          bucket_start: `${daily.activity_date}T00:00:00.000Z`,
+          total_transactions: daily.transaction_count,
+          total_volume: daily.volume_usd_micros / 1_000_000,
+          unique_senders: daily.buyer_count,
+          unique_recipients: daily.seller_count,
+        })),
+      rangeStart: row.range_start,
+      rangeEnd: row.range_end,
+    };
+  }
+  base.live = selected.size > 0;
+  return base;
+}
+
+function mergeBuckets(sources: Bucket[][]): Bucket[] {
+  const merged = new Map<string, Bucket>();
   for (const source of sources) {
     for (const bucket of source) {
-      const timestamp = new Date(bucket.bucket_start).getTime();
-      const index = Math.min(
-        count - 1,
-        Math.max(0, Math.floor((timestamp - start) / width)),
-      );
-      const target = output[index];
-      target.total_transactions += bucket.total_transactions;
-      target.total_volume += bucket.total_volume;
-      target.unique_senders += bucket.unique_senders;
-      target.unique_recipients += bucket.unique_recipients;
+      const key = bucket.bucket_start;
+      const current = merged.get(key) ?? {
+        bucket_start: key,
+        total_transactions: 0,
+        total_volume: 0,
+        unique_senders: 0,
+        unique_recipients: 0,
+      };
+      current.total_transactions += bucket.total_transactions;
+      current.unique_senders += bucket.unique_senders;
+      current.unique_recipients += bucket.unique_recipients;
+      current.total_volume = 0;
+      merged.set(key, current);
     }
   }
-  return output;
+  return [...merged.values()].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
 }
 
 function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
@@ -376,20 +355,18 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
         key,
         {
           stats: {
-            totalTransactions:
-              left.stats.totalTransactions + right.stats.totalTransactions,
-            totalVolume: left.stats.totalVolume + right.stats.totalVolume,
-            uniqueSenders:
-              left.stats.uniqueSenders + right.stats.uniqueSenders,
-            uniqueRecipients:
-              left.stats.uniqueRecipients + right.stats.uniqueRecipients,
+            totalTransactions: left.stats.totalTransactions + right.stats.totalTransactions,
+            totalVolume: 0,
+            uniqueSenders: left.stats.uniqueSenders + right.stats.uniqueSenders,
+            uniqueRecipients: left.stats.uniqueRecipients + right.stats.uniqueRecipients,
           },
-          buckets: mergeBuckets(Number(key), [left.buckets, right.buckets]),
+          buckets: mergeBuckets([left.buckets, right.buckets]),
+          rangeStart: left.rangeStart ?? right.rangeStart,
+          rangeEnd: left.rangeEnd ?? right.rangeEnd,
         },
       ];
     }),
   ) as ProtocolData["periods"];
-
   const services = Object.fromEntries(
     PERIOD_KEYS.map((key) => [
       key,
@@ -398,50 +375,60 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
         .slice(0, 18),
     ]),
   ) as ProtocolData["services"];
-
   return {
-    source: "MPPScan + x402scan public analytics",
+    source: "Independent Tempo + Base observations",
     live: mpp.live || x402.live,
     disclosure:
-      "Combined observed activity. Buyer and service counts are protocol-level sums and may contain overlap.",
+      "Transaction and identity counts are protocol-level sums and may overlap. MPP payment value and x402 raw USDC transfer value are different measurements and are deliberately not combined.",
+    measurementLabel: "Observed MPP + x402 activity",
+    volumeLabel: "Not combined",
+    volumeComparable: false,
     periods,
     services,
   };
 }
 
 export async function GET() {
-  const [mppResult, x402Result] = await Promise.allSettled([
-    loadMpp(),
-    loadX402(),
+  const [mppResult, x402Result, directoryResult] = await Promise.allSettled([
+    loadDirectProtocol("mpp"),
+    loadDirectProtocol("x402"),
+    loadServiceDirectories(),
   ]);
-
   const mpp =
     mppResult.status === "fulfilled"
       ? mppResult.value
       : emptyProtocol(
-          "MPPScan unavailable",
-          "MPP data is temporarily unavailable; no placeholder values are shown.",
+          "Tempo direct evidence unavailable",
+          "MPP direct-source data is temporarily unavailable; no placeholder values are shown.",
+          "Protocol-attributed payments",
+          "Payment value",
         );
   const x402 =
     x402Result.status === "fulfilled"
       ? x402Result.value
       : emptyProtocol(
-          "x402scan unavailable",
-          "x402 data is temporarily unavailable; no placeholder values are shown.",
+          "Base direct evidence unavailable",
+          "x402 direct-source data is temporarily unavailable; no placeholder values are shown.",
+          "Facilitator-associated settlements",
+          "Raw USDC transfer value",
         );
+  if (directoryResult.status === "fulfilled") {
+    mpp.services = directoryResult.value.mpp;
+    x402.services = directoryResult.value.x402;
+  }
   const all = combineProtocols(mpp, x402);
-
+  const rangeEnds = [mpp.periods["30"].rangeEnd, x402.periods["30"].rangeEnd]
+    .filter((value): value is string => Boolean(value))
+    .sort();
   return Response.json(
     {
       source: all.source,
       live: mpp.live || x402.live,
-      asOf: new Date().toISOString(),
+      asOf: rangeEnds.at(-1) ?? "",
       protocols: { all, mpp, x402 },
     },
     {
-      headers: {
-        "Cache-Control": "public, max-age=60, s-maxage=120",
-      },
+      headers: { "Cache-Control": "public, max-age=60, s-maxage=120" },
     },
   );
 }

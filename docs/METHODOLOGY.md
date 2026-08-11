@@ -7,16 +7,21 @@ Status: `0.3 — live aggregates, identity semantics, and evidence-gated analysi
 ### Raw
 
 Protocol-indexed successful transactions, USD value, payer addresses,
-recipient identities, and time-series buckets. Raw does not mean organic.
+recipient addresses, and time-series buckets. Raw does not mean organic.
 
 **Active payer addresses** are distinct network-normalized payer addresses in
 the selected source and window. They are not unique people or verified agents.
 One actor may use several addresses, several actors may share an address, and
 combined protocol totals may overlap.
 
-**Active server identities** are distinct recipient identities paid in the
-selected window. They are not the same as named indexed service records and are
-not necessarily unique companies.
+**Active recipient addresses** are distinct onchain recipient addresses paid in
+the selected window. They are not the same as servers, named indexed service
+records, or unique companies. One service may rotate or control several
+addresses, and one address can represent shared infrastructure.
+
+**Resolved service identities** require a separate, evidenced mapping from a
+payment recipient to a verified service or directory origin. Raw chain events
+do not provide that mapping by themselves.
 
 ### Resolved
 
@@ -34,8 +39,26 @@ activity. Adjustment is not yet applied to the production totals.
 
 | Protocol | Aggregates | Service records |
 |---|---|---|
-| MPP | MPPScan public analytics | MPPScan resolved server origins |
-| x402 | x402scan public analytics | x402scan Bazaar origins |
+| MPP | Tempo direct chain evidence | MPPScan resolved server origins |
+| x402 | Base USDC direct chain evidence + versioned facilitator registry | x402scan Bazaar origins |
+
+The public-beta homepage uses primary settlement evidence for exact rolling
+24-hour, 7-day, and 30-day windows:
+
+- x402: Base USDC event data from Coinbase CDP SQL, filtered to a versioned,
+  open facilitator-address registry;
+- MPP: current-version Tempo charges carrying valid official MPP memos for
+  pathUSD and USDC.e, plus settled TIP-1034 session events.
+
+The direct-source layer retains the query hash, collector version, time range,
+input row count, daily aggregates, source URL, measurement unit, freshness,
+and limitations. Unsettled off-chain vouchers are not counted. See
+`docs/DIRECT_SOURCE_RUNBOOK.md`.
+
+Payer and recipient counts for a selected window are deduplicated across the
+entire window. Daily unique-address counts are retained for chart context but
+are never summed, because a returning address would otherwise be counted more
+than once.
 
 For x402, the upstream Bazaar endpoint paginates recipient records before
 grouping them into origins. The index therefore reads every upstream page,
@@ -46,9 +69,10 @@ recipient count is resolved-service count.
 
 ## Combined views
 
-Transaction count and USD volume can be summed when both source metrics
-represent successful payments in the same selected window. Sender and recipient
-counts are protocol-level sums and can contain overlap.
+Transaction counts can be shown together as protocol-level observed activity.
+MPP identified payment value and x402 raw facilitator-associated USDC transfer
+value are not summed because they are different measurement units. Sender and
+recipient counts are protocol-level sums and can contain overlap.
 
 Combined service totals are the sum of resolved MPP origins and regrouped x402
 origins. A service indexed on both protocols may appear twice. The total is
@@ -62,7 +86,7 @@ The deterministic question layer currently supports:
 - successful transaction count;
 - average payment size;
 - active payer addresses;
-- active server identities;
+- active recipient addresses;
 - leading services;
 - MPP versus x402 comparisons;
 - within-window trend calculations;

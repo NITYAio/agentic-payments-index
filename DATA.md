@@ -8,8 +8,9 @@ not relicense data, names, logos, or editorial content supplied by third parties
 
 | Protocol | Source | Used for | Current state |
 |---|---|---|---|
-| MPP | [MPPScan](https://mppscan.com) | Aggregates, time buckets, payer and recipient counts, paginated service records | Raw observed activity |
-| x402 | [x402scan](https://www.x402scan.com) | Aggregates, time buckets, payer and recipient counts, paginated service records | Raw observed activity |
+| MPP | Tempo chain evidence | Current-version MPP charges, settled sessions, values, payer and server identities | Direct, unadjusted observation |
+| x402 | Base USDC chain evidence + versioned facilitator registry | Facilitator-associated transfers, raw USDC value, payer and recipient addresses | Direct, unadjusted observation |
+| Service directory | [MPPScan](https://mppscan.com) and [x402scan](https://www.x402scan.com) | Paginated named service origins only | Directory layer; not headline metrics |
 
 The index records the source, retrieval time, requested window, and material
 coverage limit with every normalized result. It does not silently combine
@@ -17,11 +18,11 @@ incompatible definitions or infer an autonomous agent from a wallet address.
 
 ## Known reconciliation work
 
-The 30-day headline totals shown by x402.org and x402scan have differed
-materially. The live application currently uses x402scan consistently across
-its cards and charts. The x402.org figures are not substituted into individual
-metrics until their chain, facilitator, status, time-boundary, and identity
-definitions can be reproduced. See the public roadmap issue for the audit.
+Third-party x402 headline totals can differ because facilitator scope,
+pass-through handling, time boundaries, and identity definitions differ. The
+live application therefore publishes its independently reproducible Base
+measurement and labels it facilitator-associated activity rather than silently
+substituting another headline figure.
 
 ## Proposing a source
 

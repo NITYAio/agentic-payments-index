@@ -34,12 +34,14 @@ The public headline remains **“The machine economy, made legible.”** “Agen
 
 ### Metrics and terminology
 
-- **Transactions:** successful protocol-indexed payment events in the selected window.
-- **USD volume:** recorded stablecoin settlement value in the selected window.
-- **Average payment size:** USD volume divided by successful transactions.
-- **Average daily transactions:** successful transactions divided by the length of the selected window. For All, the denominator is the available indexed-history span.
+- **Transactions:** records matching the protocol-specific direct-source method in the selected window.
+- **MPP payment value:** value of current-version MPP charges and settled sessions.
+- **x402 raw USDC transfer value:** value of facilitator-associated Base transfers; pass-through activity may be included.
+- **Average value:** protocol-specific value divided by qualifying records. No combined MPP + x402 average is calculated.
+- **Average daily transactions:** qualifying records divided by the exact rolling-window length. All-time remains disabled until backfill.
 - **Active payer addresses:** distinct network-normalized payer addresses observed in the selected window. This is not a count of people or autonomous agents. One actor can use several addresses; several actors can share an address; combined protocol counts may overlap.
-- **Active server identities:** distinct protocol recipient identities that received at least one observed payment in the selected window. This is not the service-directory count and not necessarily a count of companies.
+- **Active recipient addresses:** distinct network-normalized recipient addresses that received at least one observed payment in the selected window. This is not a server, company, or service-directory count.
+- **Resolved service identities:** verified mappings from payment recipients to service or directory identities. These are published separately from raw recipient-address counts.
 - **Indexed service records:** named service origins available across all paginated source-directory pages. It is directory coverage, not the active-server metric.
 - Service tables label their identity column **Payer addresses**, never “Agents.”
 - Every non-obvious term has a small superscript information affordance with a hover/focus definition and, when useful, a formula and example.
@@ -115,8 +117,9 @@ Contact details are private operational data and are never returned by the publi
 
 ### Current production coverage
 
-- MPP aggregates and directory: MPPScan public analytics.
-- x402 aggregates and directory: x402scan public analytics.
+- MPP aggregates: direct Tempo evidence; directory: MPPScan origins.
+- x402 aggregates: direct Base USDC evidence plus the versioned facilitator
+  registry; directory: x402scan Bazaar origins.
 - Complete source pagination is used for service-directory totals.
 - Current metrics are unadjusted observed activity and can include testing, internal traffic, and unresolved counterparties.
 
@@ -124,14 +127,16 @@ The site clearly credits and links the sources, publishes methodology, and does 
 
 ### Independent indexing path
 
-The long-term source of truth is direct read-only indexing from Tempo and supported x402 settlement networks, with upstream indexes retained for reconciliation. The storage design separates:
+The source of truth is direct read-only indexing from Tempo and supported x402 settlement networks, with upstream indexes retained for internal reconciliation. The storage design separates:
 
 - normalized payment facts and aggregate query tables;
 - service, wallet, and autonomy registries;
 - indexer checkpoints and provenance;
 - compressed raw archives for reproducibility.
 
-Direct-chain results may only be labelled live after contract coverage, decoding, reorg handling, reconciliation, and backfill tests pass. Until then the live product discloses its public-index source dependency.
+Direct-chain 24-hour, 7-day, and 30-day results are live in public beta after
+contract coverage, decoding, and reconciliation tests. All-time remains
+disabled until its independent backfill is complete.
 
 ## Open source, IP, and API
 
@@ -147,7 +152,9 @@ Direct-chain results may only be labelled live after contract coverage, decoding
 
 MPP and x402 remain the only combined totals until another source exposes a comparable successful-payment event, settlement value, time window, identity definition, and deduplication rule. Virtuals ACP, AP2, UCP, Nevermined, and Skyfire are tracked separately by sector role and disclosure state. The product does not create an “Other” total by mixing payments, settlements, mandates, checkouts, and agent jobs.
 
-x402scan is the current consistent source for x402 cards and charts. Material differences with x402.org headline totals remain visible as reconciliation work; official headline figures are not silently substituted without reproducible scope and methodology.
+The x402 cards and charts use the independent Base observation. It is labelled
+facilitator-associated activity and raw USDC transfer value because the current
+method cannot prove that every matched transfer is one end-user payment.
 
 ## Cost and operations
 
@@ -160,7 +167,8 @@ x402scan is the current consistent source for x402 cards and charts. Material di
 ## vNext acceptance criteria
 
 1. Protocol selection changes every visible chart and metric; a single-protocol view never retains the other protocol’s series or legend.
-2. 24h, 7d, 30d, and All work in overview, network, evidence, and service-directory views.
+2. 24h, 7d, and 30d work across overview, network, evidence, and service-directory
+   views. All-time is visible but disabled until the direct backfill completes.
 3. All displayed numbers are live, derived, or explicitly unavailable—never placeholders presented as facts.
 4. Ask the Index answers supported query classes in real time and discloses unsupported evidence instead of guessing.
 5. Query regression tests cover phrasing variants, protocol selection, all windows, comparisons, spikes, cohorts, wallets, and autonomy.

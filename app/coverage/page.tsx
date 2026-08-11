@@ -11,16 +11,16 @@ const protocols = [
   {
     name: "MPP",
     role: "Machine-native payment protocol",
-    measurement: "Included",
-    disclosure: "Public aggregates, time buckets, and paginated service records are read from MPPScan.",
-    source: "https://mppscan.com",
+    measurement: "Direct observation · public beta",
+    disclosure: "The Index reads current-version MPP charges and settled session events directly from Tempo. Invalid or older memos and unsettled vouchers are excluded. The result is protocol-attributed payment activity, before quality adjustment.",
+    source: "https://docs.tempo.xyz/guide/payments/transfer-memos",
   },
   {
     name: "x402",
     role: "HTTP-native payment standard",
-    measurement: "Included with reconciliation note",
-    disclosure: "The live view uses x402scan. x402.org headline totals have differed materially; the Index will not mix them until scope and methodology are reconciled.",
-    source: "https://x402.org",
+    measurement: "Direct observation · public beta",
+    disclosure: "The Index queries Base USDC events directly and matches a versioned public facilitator registry. This is labeled facilitator-associated settlement activity and raw USDC transfer value because pass-through transfers may be included.",
+    source: "https://docs.cdp.coinbase.com/data/sql-api/welcome",
   },
   {
     name: "Virtuals ACP",
@@ -81,7 +81,7 @@ export default function CoveragePage() {
       </header>
 
       <section className="coverageLegend" aria-label="Coverage rules">
-        <article><span>Included</span><p>Comparable public payment activity with repeatable retrieval.</p></article>
+        <article><span>Included</span><p>Repeatable direct-chain activity with protocol-specific definitions.</p></article>
         <article><span>Tracked</span><p>Sector-relevant activity awaiting a defensible adapter or overlap rules.</p></article>
         <article><span>Context</span><p>An enabling protocol, not a directly comparable transaction rail.</p></article>
       </section>

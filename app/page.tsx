@@ -36,6 +36,8 @@ type Service = {
 type Period = {
   stats: Stats;
   buckets: Bucket[];
+  rangeStart: string | null;
+  rangeEnd: string | null;
 };
 
 type ProtocolKey = "all" | "mpp" | "x402";
@@ -44,6 +46,9 @@ type ProtocolData = {
   source: string;
   live: boolean;
   disclosure: string;
+  measurementLabel: string;
+  volumeLabel: string;
+  volumeComparable: boolean;
   periods: Record<"0" | "1" | "7" | "30", Period>;
   services: Record<"0" | "1" | "7" | "30", Service[]>;
 };
@@ -126,10 +131,10 @@ type Answer = {
 };
 
 const PERIODS = [
-  { days: 1 as const, label: "24h" },
-  { days: 7 as const, label: "7d" },
-  { days: 30 as const, label: "30d" },
-  { days: 0 as const, label: "All" },
+  { days: 1 as const, label: "24h", disabled: false },
+  { days: 7 as const, label: "7d", disabled: false },
+  { days: 30 as const, label: "30d", disabled: false },
+  { days: 0 as const, label: "All", disabled: true },
 ];
 
 const QUESTIONS = [
@@ -139,32 +144,43 @@ const QUESTIONS = [
 ];
 
 const EMPTY_PROTOCOL: ProtocolData = {
-  source: "Waiting for live data",
+  source: "Waiting for direct evidence",
   live: false,
   disclosure: "No placeholder values are shown while live data loads.",
+  measurementLabel: "Direct-source observation",
+  volumeLabel: "Value",
+  volumeComparable: false,
   periods: {
     "0": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
     "1": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
     "7": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
     "30": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
   },
   services: { "0": [], "1": [], "7": [], "30": [] },
 };
 
 const FALLBACK: ExplorerData = {
-  source: "Connecting to public indexes",
+  source: "Connecting to direct chain evidence",
   live: false,
   asOf: "",
   protocols: {
@@ -353,7 +369,6 @@ function answerQuestion(
   const text = question.toLowerCase();
   const protocol = protocolForQuestion(text, selectedProtocol);
   const protocolData = data.protocols[protocol];
-  const protocolLabel = PROTOCOL_LABELS[protocol];
   const { primary: days, comparison: comparisonDays } = getTimeframes(text);
   const current =
     protocolData.periods[String(days) as "0" | "1" | "7" | "30"].stats;
@@ -369,6 +384,24 @@ function answerQuestion(
           ? "available indexed history"
           : `the aggregate ${comparisonDays}-day period`
         : null;
+
+  if (days === 0) {
+    return {
+      eyebrow: "All-time coverage · backfill status",
+      value: "Backfill in progress",
+      change: null,
+      comparison: "Exact rolling 24-hour, 7-day, and 30-day windows are available now.",
+      formula: "Requires complete direct-source history",
+      explanation:
+        "The Index does not substitute a third-party lifetime total for incomplete direct-source history.",
+      days,
+      metric: "transactions",
+      protocol,
+      limited: true,
+      status: "All-time backfill required",
+      visualization: "none",
+    };
+  }
 
   if (/\b(previous|prior|preceding)\b/.test(text)) {
     return {
@@ -423,6 +456,23 @@ function answerQuestion(
       text.includes("spend");
     const mppValue = compareVolume ? mpp.totalVolume : mpp.totalTransactions;
     const x402Value = compareVolume ? x402.totalVolume : x402.totalTransactions;
+    if (compareVolume) {
+      return {
+        eyebrow: `Value comparison · ${periodLabel}`,
+        value: "Not directly comparable",
+        change: null,
+        comparison: `MPP payment value ${usd(mppValue)} · x402 raw USDC transferred ${usd(x402Value)}`,
+        formula: "Values shown separately; no combined share",
+        explanation:
+          "MPP is protocol-attributed payment value. x402 is raw facilitator-associated USDC transfer value and may include pass-through transfers.",
+        days,
+        metric: "volume",
+        protocol,
+        limited: true,
+        status: "Different measurement units",
+        visualization: "none",
+      };
+    }
     const total = mppValue + x402Value;
     const leader = x402Value >= mppValue ? "x402" : "MPP";
     const leaderValue = Math.max(x402Value, mppValue);
@@ -436,7 +486,7 @@ function answerQuestion(
         ? `MPP ${usd(mppValue)} · x402 ${usd(x402Value)}`
         : `MPP ${compact(mppValue)} · x402 ${compact(x402Value)}`,
       explanation:
-        "Both protocols use the same date window. This comparison reflects their respective public indexes and documented coverage.",
+        "Both protocols use the same exact rolling window and are reconstructed from direct chain evidence.",
       days,
       metric: compareVolume ? "volume" : "transactions",
       protocol,
@@ -447,12 +497,29 @@ function answerQuestion(
     (text.includes("average") || text.includes("avg") || text.includes("size")) &&
     (text.includes("transaction") || text.includes("payment"))
   ) {
+    if (protocol === "all") {
+      return {
+        eyebrow: `Average value · ${periodLabel}`,
+        value: "Not combined",
+        change: null,
+        comparison: "Select MPP or x402 to inspect its protocol-specific average.",
+        formula: "No combined numerator or denominator",
+        explanation:
+          "MPP payment value and x402 raw facilitator-associated transfer value use different attribution rules.",
+        days,
+        metric: "average",
+        protocol,
+        limited: true,
+        status: "Different measurement units",
+        visualization: "none",
+      };
+    }
     const value = current.totalVolume / current.totalTransactions;
     const benchmark = baseline
       ? baseline.totalVolume / baseline.totalTransactions
       : null;
     return {
-      eyebrow: `Average payment · ${periodLabel}`,
+      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402-associated transfer"} · ${periodLabel}`,
       value: usd(value, true),
       change: benchmark === null ? null : percentageDelta(value, benchmark),
       comparison: comparisonLabel
@@ -460,7 +527,9 @@ function answerQuestion(
         : "aggregate average for the selected period",
       formula: `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} transactions`,
       explanation:
-        `This is observed ${protocolLabel} USD payment volume divided by successful transactions. It measures payment size—not network fees or unrelated token transfers.`,
+        protocol === "mpp"
+          ? "This is identified MPP payment value divided by qualifying payments."
+          : "This is raw USDC value divided by facilitator-associated Base transfers. Pass-through transfers may be included.",
       days,
       metric: "average",
       protocol,
@@ -532,12 +601,12 @@ function answerQuestion(
           )
         : null,
       comparison: comparisonLabel
-        ? `vs recipient identities seen across ${comparisonLabel}`
-        : "recipient identities in the selected period",
-      formula: `${compact(current.uniqueRecipients)} distinct payment recipients`,
+        ? `vs recipient addresses seen across ${comparisonLabel}`
+        : "recipient addresses in the selected period",
+      formula: `${compact(current.uniqueRecipients)} distinct payment recipient addresses`,
       explanation:
         protocol === "all"
-          ? "This is the sum of recipient identities reported by both protocol indexes. It is not a count of resolved services or companies, and a recipient active on both may be counted twice."
+          ? "This is the sum of recipient addresses reported by both protocol indexes. It is not a count of resolved services or companies, and a recipient active on both may be counted twice."
           : "This counts distinct payment recipients with observed activity, not the smaller directory of resolved service origins.",
       days,
       metric: "servers",
@@ -551,6 +620,25 @@ function answerQuestion(
     text.includes("usd") ||
     text.includes("dollar")
   ) {
+    if (protocol === "all") {
+      const mpp = data.protocols.mpp.periods[String(days) as "0" | "1" | "7" | "30"].stats;
+      const x402 = data.protocols.x402.periods[String(days) as "0" | "1" | "7" | "30"].stats;
+      return {
+        eyebrow: `Value measurements · ${periodLabel}`,
+        value: "Not combined",
+        change: null,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 raw USDC transferred ${usd(x402.totalVolume)}`,
+        formula: "Values shown separately; no combined total",
+        explanation:
+          "MPP and x402 use different value attribution. The Index does not add unlike measurements.",
+        days,
+        metric: "volume",
+        protocol,
+        limited: true,
+        status: "Different measurement units",
+        visualization: "none",
+      };
+    }
     const divisor = periodDays(days, protocolData.periods[String(days) as "0" | "1" | "7" | "30"].buckets);
     const daily = current.totalVolume / divisor;
     const baselineDaily =
@@ -558,7 +646,7 @@ function answerQuestion(
         ? baseline.totalVolume / comparisonDays
         : null;
     return {
-      eyebrow: `Payment volume · ${periodLabel}`,
+      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 raw USDC transfer value"} · ${periodLabel}`,
       value: usd(current.totalVolume),
       change:
         baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
@@ -567,7 +655,9 @@ function answerQuestion(
         : "total observed volume in the selected period",
       formula: `${compact(current.totalTransactions)} payments settled in the period`,
       explanation:
-        `Volume is the total observed USD value of successful ${protocolLabel} payments in the selected period.`,
+        protocol === "mpp"
+          ? "This is identified MPP payment value observed directly on Tempo."
+          : "This is raw USDC transfer value involving the maintained x402 facilitator set on Base; pass-through transfers may be included.",
       days,
       metric: "volume",
       protocol,
@@ -581,7 +671,7 @@ function answerQuestion(
       ? baseline.totalTransactions / comparisonDays
       : null;
   return {
-    eyebrow: `Successful transactions · ${periodLabel}`,
+    eyebrow: `Observed records · ${periodLabel}`,
     value: compact(current.totalTransactions),
     change:
       baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
@@ -590,7 +680,7 @@ function answerQuestion(
       : "total successful transactions in the selected period",
     formula: `${compact(Math.round(daily))} transactions per day`,
     explanation:
-      `This counts observed successful ${protocolLabel} payments across indexed services.`,
+      `This counts ${protocolData.measurementLabel.toLowerCase()} reconstructed from direct chain evidence.`,
     days,
     metric: "transactions",
     protocol,
@@ -940,7 +1030,7 @@ export default function Home() {
   const [protocol, setProtocol] = useState<ProtocolKey>("all");
   const [period, setPeriod] = useState<0 | 1 | 7 | 30>(30);
   const [question, setQuestion] = useState(
-    "Compare MPP and x402 transaction volume over the last 7 days.",
+    "Compare MPP and x402 transaction activity over the last 7 days.",
   );
   const [submittedQuestion, setSubmittedQuestion] = useState(question);
   const [hasAsked, setHasAsked] = useState(false);
@@ -1002,7 +1092,7 @@ export default function Home() {
       ? parameters.get("protocol")
       : "all") as ProtocolKey;
     const requestedDays = Number(parameters.get("days"));
-    const sharedPeriod = ([0, 1, 7, 30].includes(requestedDays)
+    const sharedPeriod = ([1, 7, 30].includes(requestedDays)
       ? requestedDays
       : 30) as 0 | 1 | 7 | 30;
     let active = true;
@@ -1090,14 +1180,13 @@ export default function Home() {
     }),
   );
   const selectedPeriodDays = periodDays(period, selected.buckets);
-  const average = selected.stats.totalTransactions
+  const average = selectedProtocolData.volumeComparable && selected.stats.totalTransactions
     ? selected.stats.totalVolume / selected.stats.totalTransactions
     : 0;
   const mppSelected = data.protocols.mpp.periods[selectedKey].stats;
   const x402Selected = data.protocols.x402.periods[selectedKey].stats;
   const combinedTransactions =
     mppSelected.totalTransactions + x402Selected.totalTransactions;
-  const combinedVolume = mppSelected.totalVolume + x402Selected.totalVolume;
 
   async function runQuestion(
     nextQuestion: string,
@@ -1264,7 +1353,7 @@ export default function Home() {
       coverage: {
         indexedServiceRecords: directory.total,
         activePayerAddresses: selected.stats.uniqueSenders,
-        activeServerIdentities: selected.stats.uniqueRecipients,
+        activeRecipientAddresses: selected.stats.uniqueRecipients,
         mppIndexedOrigins: directory.sourceTotals.mpp,
         x402IndexedOrigins: directory.sourceTotals.x402,
         caveat: directory.disclosure,
@@ -1291,8 +1380,8 @@ export default function Home() {
         <aside className="publicBetaBar" aria-label="Public beta notice">
           <strong>Public beta</strong>
           <span>
-            Aggregate analytics are live. Identity history and cohort coverage
-            are being backfilled.
+            Direct-chain 24h, 7d, and 30d windows are live. Identity history and
+            all-time coverage are being backfilled.
           </span>
           <a href="#machine-evidence">Coverage details ↓</a>
         </aside>
@@ -1389,8 +1478,8 @@ export default function Home() {
       <aside className="publicBetaBar" aria-label="Public beta notice">
         <strong>Public beta</strong>
         <span>
-          Aggregate analytics are live. Identity history and cohort coverage are
-          being backfilled.
+          Direct-chain 24h, 7d, and 30d windows are live. Identity history and
+          all-time coverage are being backfilled.
         </span>
         <a href="/coverage">Coverage details ↗</a>
       </aside>
@@ -1404,9 +1493,9 @@ export default function Home() {
             <i />
             <i />
           </span>
-          <span className="brandCopy">
-            <span>THE AGENTIC PAYMENTS INDEX</span>
-            <small>Observed MPP + x402 activity</small>
+            <span className="brandCopy">
+              <span>THE AGENTIC PAYMENTS INDEX</span>
+              <small>Independent Tempo + Base observations</small>
           </span>
         </a>
         <div className="navLinks">
@@ -1542,14 +1631,18 @@ export default function Home() {
                     days={answer.days}
                     yAxisTitle={
                       answer.metric === "volume"
-                        ? "USD volume per bucket"
+                        ? answer.protocol === "x402"
+                          ? "Raw USDC transfer value per bucket"
+                          : "MPP payment value per bucket"
                         : answer.metric === "average"
-                          ? "Average USD payment per bucket"
+                          ? answer.protocol === "x402"
+                            ? "Average raw USDC transfer per bucket"
+                            : "Average MPP payment per bucket"
                           : answer.metric === "buyers"
                             ? "Active payer addresses per bucket"
                             : answer.metric === "servers"
-                              ? "Active server identities per bucket"
-                              : "Successful transactions per bucket"
+                              ? "Active recipient addresses per bucket"
+                              : "Observed records per bucket"
                     }
                     series={answerSeries}
                   />
@@ -1564,7 +1657,7 @@ export default function Home() {
                     Source: {answer.source}
                     {answer.cohort?.completeThrough
                       ? ` · verified identity coverage through ${answer.cohort.completeThrough}.`
-                      : " · calculated from the latest loaded index snapshot."}
+                      : " · calculated from the latest direct-evidence snapshot."}
                   </p>
                 )}
                 {!answer.limited && (
@@ -1594,7 +1687,10 @@ export default function Home() {
                 <button
                   key={item.days}
                   className={period === item.days ? "active" : ""}
+                  disabled={item.disabled}
+                  title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
                   onClick={() => {
+                    if (item.disabled) return;
                     setPeriod(item.days);
                     setServicePage(1);
                   }}
@@ -1610,9 +1706,9 @@ export default function Home() {
             <article>
               <InfoTerm
                 label="Transactions"
-                definition="Successful protocol-indexed payment events observed during the selected time window."
-                formula="Count of successful payment records."
-                example="A 30-day total of 13.2M means 13.2M successful payment events were indexed."
+                definition={`${selectedProtocolData.measurementLabel} in the exact rolling time window.`}
+                formula="Count of records matching the published protocol-specific direct-source method."
+                example="The combined view adds record counts while preserving the distinct MPP and x402 definitions."
               />
               <strong>
                 {selectedProtocolData.live
@@ -1627,19 +1723,37 @@ export default function Home() {
             </article>
             <article>
               <InfoTerm
-                label="USD volume"
-                definition="The total stablecoin settlement value recorded during the selected window, expressed in US dollars."
-                formula="Sum of the USD value of observed successful payments."
-                example={`${usd(selected.stats.totalVolume)} observed across the selected window.`}
+                label={selectedProtocolData.volumeLabel}
+                definition={
+                  protocol === "all"
+                    ? "MPP identified payment value and x402 raw facilitator-associated USDC transfer value are different measurements, so the Index does not add them together."
+                    : protocol === "mpp"
+                      ? "The value of current-version MPP charges and settled sessions observed directly on Tempo."
+                      : "The raw value of USDC transfers involving the maintained x402 facilitator set on Base. Pass-through transfers may be included."
+                }
+                formula={
+                  protocol === "all"
+                    ? "Shown separately by protocol; no combined dollar total."
+                    : "Sum of the directly observed values in the exact rolling window."
+                }
+                example={
+                  protocol === "all"
+                    ? `MPP ${usd(mppSelected.totalVolume)} · x402 raw ${usd(x402Selected.totalVolume)}`
+                    : `${usd(selected.stats.totalVolume)} observed across the selected window.`
+                }
               />
               <strong>
                 {selectedProtocolData.live
-                  ? compactUsd(selected.stats.totalVolume)
+                  ? selectedProtocolData.volumeComparable
+                    ? compactUsd(selected.stats.totalVolume)
+                    : "Not combined"
                   : "—"}
               </strong>
               <small>
                 {selectedProtocolData.live
-                  ? `${usd(average, true)} average payment`
+                  ? selectedProtocolData.volumeComparable
+                    ? `${usd(average, true)} average per observed record`
+                    : "Different measurement units"
                   : "Connecting to index"}
               </small>
             </article>
@@ -1673,10 +1787,10 @@ export default function Home() {
             </article>
             <article>
               <InfoTerm
-                label="Active server identities"
-                definition="Distinct protocol recipient identities that received at least one observed payment in the selected window."
-                formula="Count of distinct source-reported recipient identities with successful payments."
-                example="One service can use several recipient identities, so this is not a count of companies."
+                label="Active recipient addresses"
+                definition="Distinct network-normalized recipient addresses that received at least one observed payment in the selected window."
+                formula="Count of distinct directly observed recipient identifiers in the selected window."
+                example="One service can use several recipient addresses, so this is not a count of servers or companies."
               />
               <strong>
                 {selectedProtocolData.live
@@ -1692,9 +1806,9 @@ export default function Home() {
               <div>
                 <InfoTerm
                   label="Protocol activity"
-                  definition="Successful payments observed in each source-native time bucket, shown separately for MPP and x402."
-                  formula="Count of successful transactions per time bucket."
-                  example="Taller bars indicate more payments during that bucket, not higher payment value."
+                  definition="Directly observed protocol-attributed MPP payments and facilitator-associated x402 settlements, shown separately."
+                  formula="Count of qualifying records per time bucket under each protocol's published method."
+                  example="Taller bars indicate more qualifying records during that bucket, not higher dollar value."
                 />
                 <small>{period === 0 ? `Available indexed history since ${coverageStart(selected.buckets)}` : period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
               </div>
@@ -1705,7 +1819,7 @@ export default function Home() {
             </div>
             <LabeledBarChart
               days={period}
-              yAxisTitle="Successful transactions per bucket"
+              yAxisTitle="Observed records per bucket"
               series={(protocol === "all" ? ["mpp", "x402"] : [protocol]).map((item) => ({
                 key: item,
                 label: PROTOCOL_LABELS[item as ProtocolKey],
@@ -1727,7 +1841,7 @@ export default function Home() {
         <div className="definitionBody">
           <p className="definitionIntro">
             The Agentic Payments Index brings MPP and x402 stablecoin activity into
-            one comparable view. It shows what the payment data proves—and clearly
+            one evidence-led view. It shows what the chain data proves—and clearly
             labels what it cannot prove about the person, application, or agent
             behind a wallet.
           </p>
@@ -1736,9 +1850,9 @@ export default function Home() {
               <span>01 / Observed</span>
               <strong>Protocol activity</strong>
               <p>
-                Transactions, settlement value, payer and recipient identifiers,
-                timestamps, and resolved service origins exposed by the public
-                indexes.
+                Transactions, value, payer and recipient identifiers, and timestamps
+                reconstructed from Tempo and Base. Named service origins remain a
+                separate directory layer.
               </p>
             </article>
             <article>
@@ -1773,7 +1887,10 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
+                disabled={item.disabled}
+                title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
                 onClick={() => {
+                  if (item.disabled) return;
                   setPeriod(item.days);
                   setServicePage(1);
                 }}
@@ -1789,17 +1906,39 @@ export default function Home() {
             label="Transactions"
             value={compact(selected.stats.totalTransactions)}
             note={`${compact(selected.stats.totalTransactions / selectedPeriodDays)} / day`}
-            definition="Successful protocol-indexed payment events observed during the selected time window."
-            formula="Count of successful payment records."
-            example="A retry is counted only if it appears as a separate successful payment record."
+            definition={`${selectedProtocolData.measurementLabel} in the exact rolling time window.`}
+            formula="Count of records that satisfy the protocol-specific direct-source method."
+            example="MPP and x402 use different attribution rules; the combined view sums their record counts but preserves those definitions."
           />
           <MetricCard
-            label="USD volume"
-            value={compactUsd(selected.stats.totalVolume)}
-            note={`${usd(average, true)} avg payment`}
-            definition="The sum of recorded stablecoin settlement values in the selected window, expressed in US dollars."
-            formula="Sum of observed successful payment values."
-            example="A $2 and a $3 payment produce $5 of USD volume."
+            label={selectedProtocolData.volumeLabel}
+            value={
+              selectedProtocolData.volumeComparable
+                ? compactUsd(selected.stats.totalVolume)
+                : "Not combined"
+            }
+            note={
+              selectedProtocolData.volumeComparable
+                ? `${usd(average, true)} average per record`
+                : "MPP and x402 shown separately"
+            }
+            definition={
+              protocol === "all"
+                ? "MPP identified payment value and x402 raw facilitator-associated USDC transfer value are not equivalent and are not added together."
+                : protocol === "mpp"
+                  ? "Value of current-version MPP charges and settled sessions observed directly on Tempo."
+                  : "Raw USDC transfer value involving the maintained x402 facilitator set on Base; pass-through transfers may be included."
+            }
+            formula={
+              protocol === "all"
+                ? "No combined value is calculated."
+                : "Sum of directly observed value in the exact rolling window."
+            }
+            example={
+              protocol === "all"
+                ? `MPP ${usd(mppSelected.totalVolume)} · x402 raw ${usd(x402Selected.totalVolume)}`
+                : `Observed value: ${usd(selected.stats.totalVolume)}.`
+            }
           />
           <MetricCard
             label="Active payer addresses"
@@ -1818,15 +1957,15 @@ export default function Home() {
             example="One actor using two wallets can appear twice; several actors can also share one wallet."
           />
           <MetricCard
-            label="Active server identities"
+            label="Active recipient addresses"
             value={compact(selected.stats.uniqueRecipients)}
             note={
               protocol === "all"
                 ? "Protocol-level sum; not companies"
                 : "Distinct active recipients"
             }
-            definition="Distinct protocol recipient identities that received at least one observed payment in the selected window. These are not necessarily distinct companies or services."
-            formula="Distinct active recipient identities reported by the selected protocol indexes."
+            definition="Distinct network-normalized recipient addresses that received at least one observed payment in the selected window. These are not servers, companies, or necessarily distinct services."
+            formula="Distinct active recipient addresses reported by the selected protocol indexes."
             example="Several wallet addresses may belong to the same underlying service."
           />
         </div>
@@ -1837,9 +1976,9 @@ export default function Home() {
               <div>
                 <InfoTerm
                   label="Protocol share"
-                  definition="Each protocol's portion of the combined observed total for the same metric and time window."
-                  formula="Protocol value ÷ combined MPP and x402 value × 100."
-                  example="If MPP has 40 transactions and x402 has 60, their shares are 40% and 60%."
+                  definition="Each protocol's portion of combined observed record counts for the same time window. Dollar values are not compared because their measurement units differ."
+                  formula="Protocol record count ÷ combined MPP and x402 record count × 100."
+                  example="If MPP has 40 qualifying records and x402 has 60, their activity shares are 40% and 60%."
                 />
                 <strong>MPP vs x402</strong>
               </div>
@@ -1867,26 +2006,15 @@ export default function Home() {
                   {compact(x402Selected.totalTransactions)}
                 </b>
               </div>
-              <div className="shareRow">
-                <span>USD volume</span>
-                <div className="shareTrack" aria-hidden="true">
-                  <i
-                    className="shareMpp"
-                    style={{
-                      width: `${combinedVolume ? (mppSelected.totalVolume / combinedVolume) * 100 : 0}%`,
-                    }}
-                  />
-                  <i
-                    className="shareX402"
-                    style={{
-                      width: `${combinedVolume ? (x402Selected.totalVolume / combinedVolume) * 100 : 0}%`,
-                    }}
-                  />
+              <div className="shareRow valueSeparationRow">
+                <span>Value measurements</span>
+                <div className="separateValues" aria-label="Protocol value measurements shown separately">
+                  <i className="legendMpp" />
+                  <b>MPP payment value {usd(mppSelected.totalVolume)}</b>
+                  <i className="legendX402" />
+                  <b>x402 raw USDC transferred {usd(x402Selected.totalVolume)}</b>
                 </div>
-                <b>
-                  MPP {usd(mppSelected.totalVolume)} · x402{" "}
-                  {usd(x402Selected.totalVolume)}
-                </b>
+                <small>Not combined</small>
               </div>
             </div>
           </div>
@@ -1898,8 +2026,8 @@ export default function Home() {
               <div>
                 <InfoTerm
                   label="Average daily transactions"
-                  definition="The average number of successful transactions observed per day in the selected time window."
-                  formula="Total successful transactions ÷ number of days."
+                  definition="The average number of qualifying direct-source records observed per day in the selected time window."
+                  formula="Total observed records ÷ number of days."
                   example={`${compact(selected.stats.totalTransactions)} ÷ ${Math.round(selectedPeriodDays)} days = ${compact(Math.round(selected.stats.totalTransactions / selectedPeriodDays))} transactions per day.`}
                 />
                 <strong>
@@ -1914,7 +2042,7 @@ export default function Home() {
             <LabeledBarChart
               className="activityChart"
               days={period}
-              yAxisTitle="Successful transactions per bucket"
+              yAxisTitle="Observed records per bucket"
               series={[
                 {
                   key: protocol,
@@ -1933,31 +2061,67 @@ export default function Home() {
           </article>
 
           <article className="signalPanel">
-            <span className="signalLabel">
-              <InfoTerm
-                label="Average payment size"
-                definition="The mean USD value of successful observed payments in the selected window."
-                formula="Total USD volume ÷ successful transactions."
-                example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per payment.`}
-              />
-            </span>
-            <strong>{usd(average, true)}</strong>
-            <p>Average observed payment in this period.</p>
-            <div className="signalRule" />
-            <dl>
-              <div>
-                <dt>Volume</dt>
-                <dd>{usd(selected.stats.totalVolume)}</dd>
-              </div>
-              <div>
-                <dt>Transactions</dt>
-                <dd>{compact(selected.stats.totalTransactions)}</dd>
-              </div>
-              <div>
-                <dt>Data window</dt>
-                <dd>{periodLabel(period)}</dd>
-              </div>
-            </dl>
+            {protocol === "all" ? (
+              <>
+                <span className="signalLabel">
+                  <InfoTerm
+                    label="Value measurements"
+                    definition="MPP payment value and x402 raw facilitator-associated USDC transfer value are different measurements."
+                    formula="Values are shown separately; no combined total or average is calculated."
+                    example={`MPP ${usd(mppSelected.totalVolume)} · x402 raw ${usd(x402Selected.totalVolume)}`}
+                  />
+                </span>
+                <strong>Not combined</strong>
+                <p>Comparable activity counts; distinct value definitions.</p>
+                <div className="signalRule" />
+                <dl>
+                  <div>
+                    <dt>MPP payment value</dt>
+                    <dd>{usd(mppSelected.totalVolume)}</dd>
+                  </div>
+                  <div>
+                    <dt>x402 raw USDC</dt>
+                    <dd>{usd(x402Selected.totalVolume)}</dd>
+                  </div>
+                  <div>
+                    <dt>Data window</dt>
+                    <dd>{periodLabel(period)}</dd>
+                  </div>
+                </dl>
+              </>
+            ) : (
+              <>
+                <span className="signalLabel">
+                  <InfoTerm
+                    label={protocol === "mpp" ? "Average MPP payment size" : "Average x402-associated transfer"}
+                    definition={
+                      protocol === "mpp"
+                        ? "The mean identified MPP payment value in the selected window."
+                        : "The mean raw USDC value per facilitator-associated Base transfer; this is not assumed to equal average end-user payment size."
+                    }
+                    formula="Observed value ÷ qualifying records."
+                    example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per record.`}
+                  />
+                </span>
+                <strong>{usd(average, true)}</strong>
+                <p>{protocol === "mpp" ? "Average identified MPP payment." : "Average facilitator-associated USDC transfer."}</p>
+                <div className="signalRule" />
+                <dl>
+                  <div>
+                    <dt>{selectedProtocolData.volumeLabel}</dt>
+                    <dd>{usd(selected.stats.totalVolume)}</dd>
+                  </div>
+                  <div>
+                    <dt>Observed records</dt>
+                    <dd>{compact(selected.stats.totalTransactions)}</dd>
+                  </div>
+                  <div>
+                    <dt>Data window</dt>
+                    <dd>{periodLabel(period)}</dd>
+                  </div>
+                </dl>
+              </>
+            )}
           </article>
         </div>
       </section>
@@ -1976,7 +2140,10 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
+                disabled={item.disabled}
+                title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
                 onClick={() => {
+                  if (item.disabled) return;
                   setPeriod(item.days);
                   setServicePage(1);
                 }}
@@ -1988,19 +2155,20 @@ export default function Home() {
         </div>
         <div className="evidenceGrid">
           <article>
-            <span className="evidenceState liveEvidence">Source-reported</span>
-            <small>Successful transactions</small>
+            <span className="evidenceState liveEvidence">Directly observed</span>
+            <small>Qualifying records</small>
             <strong>{compact(selected.stats.totalTransactions)}</strong>
             <p>
-              Successful protocol-indexed transactions in the selected window.
+              Records matching the published MPP or x402 direct-source method in
+              the exact rolling window.
             </p>
           </article>
           <article>
-            <span className="evidenceState resolvedEvidence">Source-reported</span>
-            <small>Active server identities</small>
+            <span className="evidenceState resolvedEvidence">Directly observed</span>
+            <small>Active recipient addresses</small>
             <strong>{compact(selected.stats.uniqueRecipients)}</strong>
             <p>
-              Distinct recipient identities paid in this window—not companies,
+              Distinct recipient addresses paid in this window—not servers or companies,
               and not the named service-directory count.
             </p>
           </article>
@@ -2028,7 +2196,10 @@ export default function Home() {
                 <button
                   key={item.days}
                   className={period === item.days ? "active" : ""}
+                  disabled={item.disabled}
+                  title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
                   onClick={() => {
+                    if (item.disabled) return;
                     setPeriod(item.days);
                     setServicePage(1);
                   }}
@@ -2236,8 +2407,8 @@ export default function Home() {
         <div className="identityGrid">
           <article>
             <span>Address layer</span>
-            <strong>Active payer + server identities</strong>
-            <p>Live source-reported identifiers, with cross-wallet and cross-protocol duplication disclosed.</p>
+            <strong>Active payer + recipient addresses</strong>
+            <p>Directly observed identifiers, with cross-wallet and cross-protocol duplication disclosed.</p>
           </article>
           <article>
             <span>Wallet layer</span>
@@ -2269,8 +2440,8 @@ export default function Home() {
             <span>01</span>
             <h3>Observe</h3>
             <p>
-              Read-only payment aggregates and source-native time series are
-              refreshed from the MPPScan and x402scan public indexes.
+              Current beta totals come from public MPPScan and x402scan feeds.
+              Independent Base and Tempo collectors are being reconciled before cutover.
             </p>
           </article>
           <article>
@@ -2310,7 +2481,7 @@ export default function Home() {
           <span>THE AGENTIC PAYMENTS INDEX</span>
         </a>
         <p>
-          Independent, open evidence layer using public analytics from{" "}
+          Current beta data uses public analytics from{" "}
           <a href="https://mppscan.com" target="_blank" rel="noreferrer">
             MPPScan
           </a>{" "}
@@ -2318,7 +2489,7 @@ export default function Home() {
           <a href="https://www.x402scan.com" target="_blank" rel="noreferrer">
             x402scan
           </a>
-          . Not affiliated with either index.
+          . Independent Base and Tempo collectors are in verification. Not affiliated with either index.
           {" "}<a href="/about">About</a> · <a href="/coverage">Coverage</a> ·{" "}
           <a href="https://github.com/NITYAio/agentic-payments-index" target="_blank" rel="noreferrer">Contribute</a>
         </p>

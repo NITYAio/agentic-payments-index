@@ -45,6 +45,9 @@ type ExplorerData = {
     ProtocolKey,
     {
       source: string;
+      measurementLabel: string;
+      volumeLabel: string;
+      volumeComparable: boolean;
       periods: Record<
         PeriodKey,
         { stats: Stats; buckets: Bucket[] }
@@ -229,6 +232,23 @@ async function answerQuestion(
   const source = protocolData.source;
   const common = { days, protocol, source, asOf: data.asOf };
 
+  if (days === 0) {
+    return {
+      ...common,
+      eyebrow: "All-time coverage · backfill status",
+      value: "Backfill in progress",
+      change: null,
+      comparison: "Exact rolling 24-hour, 7-day, and 30-day windows are available now.",
+      formula: "Requires complete direct-source history from the first qualifying record",
+      explanation:
+        "The Index does not substitute a third-party lifetime total for incomplete direct-source history. Ask for 24 hours, 7 days, or 30 days while the all-time backfill is completed.",
+      metric: "transactions",
+      limited: true,
+      status: "All-time backfill required",
+      visualization: "none",
+    };
+  }
+
   if (intent === "cohort") {
     const request = parseCohortRequest(text, protocol);
     let cohort: CohortMatrix | null = null;
@@ -381,7 +401,7 @@ async function answerQuestion(
       comparison: `${delta === null ? "No" : percent(delta)} difference versus the median observed bucket`,
       formula: `${compact(bucket.total_transactions)} bucket transactions ÷ ${compact(median)} median bucket transactions`,
       explanation:
-        "This verifies the size and timing of the movement. The public aggregate feed does not provide dated per-service contributors or causal labels, so the Index does not claim why it happened without additional evidence.",
+        "This verifies the size and timing of the movement from direct chain evidence. The current attribution layer does not identify dated per-service contributors or causal labels, so the Index does not claim why it happened without additional evidence.",
       metric: "transactions",
       limited: true,
       status: "Magnitude verified; cause unverified",
@@ -401,6 +421,22 @@ async function answerQuestion(
     const leader = x402Value >= mppValue ? "x402" : "MPP";
     const share = total ? (Math.max(mppValue, x402Value) / total) * 100 : 0;
     const formatter = metric === "volume" || metric === "average" ? usd : compact;
+    if (metric === "volume" || metric === "average") {
+      return {
+        ...common,
+        eyebrow: `Value comparison · ${range}`,
+        value: "Not directly comparable",
+        change: null,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 raw USDC transferred ${usd(x402.totalVolume)}`,
+        formula: "Values shown separately; no combined share or average",
+        explanation:
+          "MPP is protocol-attributed payment value. x402 is raw USDC transfer value involving the maintained facilitator set and may include pass-through transfers. Adding them or calculating a market share would imply equivalence the evidence does not establish.",
+        metric,
+        limited: true,
+        status: "Different measurement units",
+        chartProtocols: ["mpp", "x402"],
+      };
+    }
     return {
       ...common,
       eyebrow: `${metric === "volume" ? "USD volume" : metric === "average" ? "Average payment" : "Transaction"} comparison · ${range}`,
@@ -409,7 +445,7 @@ async function answerQuestion(
       comparison: `${leader} leads the combined observed total`,
       formula: `MPP ${formatter(mppValue)} · x402 ${formatter(x402Value)}`,
       explanation:
-        "Both protocols use the same requested window. Counts remain source-indexed and combined payer or server identities are not cross-protocol deduplicated.",
+        "Both protocols use the same exact rolling window. Counts are independently observed; combined payer or recipient addresses are not cross-protocol deduplicated.",
       metric,
       chartProtocols: ["mpp", "x402"],
     };
@@ -449,6 +485,22 @@ async function answerQuestion(
   }
 
   if (metric === "average") {
+    if (protocol === "all") {
+      return {
+        ...common,
+        eyebrow: `Average value · ${range}`,
+        value: "Not combined",
+        change: null,
+        comparison: "MPP payment size and x402 facilitator-associated transfer size are shown separately.",
+        formula: "No combined numerator or denominator",
+        explanation:
+          "The two protocols have different value attribution. Select MPP for average identified payment size or x402 for average raw facilitator-associated USDC transfer.",
+        metric,
+        limited: true,
+        status: "Different measurement units",
+        visualization: "none",
+      };
+    }
     const average = current.totalTransactions
       ? current.totalVolume / current.totalTransactions
       : 0;
@@ -461,19 +513,21 @@ async function answerQuestion(
       : null;
     return {
       ...common,
-      eyebrow: `Average payment · ${range}`,
+      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402-associated transfer"} · ${range}`,
       value: usd(average, true),
       change: thirtyDayTrend,
       comparison:
         asksForThirtyDayChange && thirtyDayTrend !== null
           ? `30-day payment-size trend: ${percent(thirtyDayTrend)}, comparing the last third with the first third`
-          : `${label} observed payment size`,
+          : protocol === "mpp" ? "Observed MPP payment size" : "Observed facilitator-associated transfer size",
       formula:
         asksForThirtyDayChange
           ? `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} payments; 30-day trend = last-segment average ÷ first-segment average − 1`
           : `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} successful transactions`,
       explanation:
-        "Average payment size measures stablecoin settlement value per successful indexed payment. It excludes network fees and unrelated transfers. The 30-day change, when requested, is a within-window bucket trend rather than a comparison between overlapping rolling totals.",
+        protocol === "mpp"
+          ? "Average MPP payment size is identified MPP value divided by qualifying payments. The 30-day change, when requested, is a within-window bucket trend rather than a comparison between overlapping rolling totals."
+          : "This is raw USDC value divided by facilitator-associated Base transfers. Pass-through transfers may be included, so it is not presented as average end-user x402 payment size.",
       metric,
     };
   }
@@ -484,7 +538,7 @@ async function answerQuestion(
       eyebrow: `Active payer addresses · ${range}`,
       value: compact(current.uniqueSenders),
       change: null,
-      comparison: protocol === "all" ? "Protocol-level sum; not cross-protocol deduplicated" : "Distinct source-reported payer identifiers",
+      comparison: protocol === "all" ? "Protocol-level sum; not cross-protocol deduplicated" : "Distinct directly observed payer identifiers",
       formula: `${compact(current.uniqueSenders)} distinct network-normalized payer addresses`,
       explanation:
         "This is not a count of people or autonomous agents. One actor may use several addresses, several actors may share one, and combined protocol identities may overlap.",
@@ -515,27 +569,47 @@ async function answerQuestion(
   if (metric === "servers") {
     return {
       ...common,
-      eyebrow: `Active server identities · ${range}`,
+      eyebrow: `Active recipient addresses · ${range}`,
       value: compact(current.uniqueRecipients),
       change: null,
       comparison: protocol === "all" ? "Protocol-level sum; not unique companies" : "Distinct active payment recipients",
-      formula: `${compact(current.uniqueRecipients)} distinct source-reported recipient identities`,
+      formula: `${compact(current.uniqueRecipients)} distinct directly observed recipient addresses`,
       explanation:
-        "This counts recipient identities with observed payments in the selected window. It differs from indexed service records, which count named directory origins.",
+        "This counts recipient addresses with observed payments in the selected window. It is not a count of servers, companies, or named directory origins.",
       metric,
     };
   }
 
   if (metric === "volume") {
+    if (protocol === "all") {
+      const mpp = data.protocols.mpp.periods[key].stats;
+      const x402 = data.protocols.x402.periods[key].stats;
+      return {
+        ...common,
+        eyebrow: `Value measurements · ${range}`,
+        value: "Not combined",
+        change: null,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 raw USDC transferred ${usd(x402.totalVolume)}`,
+        formula: "Values shown separately; no combined total",
+        explanation:
+          "MPP is protocol-attributed payment value. x402 is facilitator-associated raw USDC transfer value and may include pass-through activity. The Index does not add unlike measurements.",
+        metric,
+        limited: true,
+        status: "Different measurement units",
+        visualization: "none",
+      };
+    }
     return {
       ...common,
-      eyebrow: `USD payment volume · ${range}`,
+      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 raw USDC transfer value"} · ${range}`,
       value: usd(current.totalVolume),
       change: null,
-      comparison: `${label} total observed settlement value`,
-      formula: `Sum of ${compact(current.totalTransactions)} successful payment values`,
+      comparison: `${label} directly observed value`,
+      formula: `Sum across ${compact(current.totalTransactions)} qualifying records`,
       explanation:
-        "Volume is the recorded stablecoin value of successful protocol-indexed payments in the requested window.",
+        protocol === "mpp"
+          ? "This is identified MPP payment value observed directly on Tempo in the requested rolling window."
+          : "This is raw USDC transfer value involving the maintained x402 facilitator set on Base. It may include pass-through transfers and is not labeled payment revenue.",
       metric,
     };
   }
@@ -543,13 +617,13 @@ async function answerQuestion(
   const divisor = coverageDays(period.buckets, days);
   return {
     ...common,
-    eyebrow: `Successful transactions · ${range}`,
+    eyebrow: `Observed records · ${range}`,
     value: compact(current.totalTransactions),
     change: null,
     comparison: `${compact(current.totalTransactions / divisor)} average transactions per day`,
-    formula: `${compact(current.totalTransactions)} observed successful payment events`,
+    formula: `${compact(current.totalTransactions)} records matching the direct-source method`,
     explanation:
-      `This counts successful ${label} payments exposed by the selected public indexes. It is raw observed activity, not a quality-adjusted adoption estimate.`,
+      `This counts ${protocolData.measurementLabel.toLowerCase()} reconstructed from direct chain evidence. It is raw observed activity, not a quality-adjusted adoption estimate.`,
     metric: "transactions",
   };
 }
