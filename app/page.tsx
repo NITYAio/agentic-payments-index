@@ -2169,8 +2169,8 @@ export default function Home() {
       <section className="section servicesSection" id="services">
         <div className="sectionHeading">
           <div>
-            <span className="sectionNumber">03 / Service economy</span>
-            <h2>Where {PROTOCOL_LABELS[protocol]} payments go</h2>
+            <span className="sectionNumber">03 / Recipients</span>
+            <h2>Recipients</h2>
           </div>
           <div className="servicesHeadingAside">
             <div className="periodControl" aria-label="Service directory time period">
@@ -2422,8 +2422,9 @@ export default function Home() {
             <span>01</span>
             <h3>Observe</h3>
             <p>
-              Current beta totals come from public MPPScan and x402scan feeds.
-              Independent Base and Tempo collectors are being reconciled before cutover.
+              Current beta totals are reconstructed independently from Base and Tempo
+              chain evidence. MPPScan and x402scan are used only as reconciliation
+              references.
             </p>
           </article>
           <article>
@@ -2463,7 +2464,8 @@ export default function Home() {
           <span>THE AGENTIC PAYMENTS INDEX</span>
         </a>
         <p>
-          Current beta data uses public analytics from{" "}
+          Current beta data is reconstructed independently from Base and Tempo chain
+          evidence. Public explorers such as{" "}
           <a href="https://mppscan.com" target="_blank" rel="noreferrer">
             MPPScan
           </a>{" "}
@@ -2471,7 +2473,7 @@ export default function Home() {
           <a href="https://www.x402scan.com" target="_blank" rel="noreferrer">
             x402scan
           </a>
-          . Independent Base and Tempo collectors are in verification. Not affiliated with either index.
+          {" "}are reconciliation references—not data feeds. Not affiliated with either index.
           {" "}<a href="/about">About</a> · <a href="/coverage">Coverage</a> ·{" "}
           <a href="https://github.com/NITYAio/agentic-payments-index" target="_blank" rel="noreferrer">Contribute</a>
         </p>
