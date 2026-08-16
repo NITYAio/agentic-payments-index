@@ -42,7 +42,6 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /Identity history and all-time coverage are being backfilled/i);
   assert.match(html, /Independent Tempo \+ Base observations/i);
   assert.match(html, /Not combined/i);
-  assert.match(html, /All-time direct-source backfill is in progress/i);
   assert.match(html, /What this index measures/i);
   assert.match(html, /Updated through/i);
   assert.match(html, /Network pulse/i);
@@ -82,7 +81,8 @@ test("server-renders the private direct-source verification surface", async () =
   const html = await response.text();
   assert.match(html, /Direct-source cutover review/i);
   assert.match(html, /Primary evidence/i);
-  assert.match(html, /incompatible measurement units are deliberately not combined/i);
+  assert.match(html, /Payment value is counted once at the payer.*original amount/i);
+  assert.match(html, /recipient value and gross transfer movement remain available for audit/i);
   assert.match(html, /Loading verified evidence/i);
 });
 

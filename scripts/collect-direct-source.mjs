@@ -5,19 +5,17 @@ import { dirname, resolve } from "node:path";
 
 import {
   aggregateMppPayments,
+  aggregateX402TerminalPayments,
   buildTempoLogFilter,
   buildTempoSessionLogFilter,
   buildX402DailySql,
-  buildX402WindowSql,
+  buildX402MultiLegSql,
   COLLECTOR_VERSION,
   createJsonRpcClient,
   fillDailyMetricRange,
-  normalizeX402DailyRows,
-  normalizeX402WindowRow,
   parseDateRange,
   sha256Hex,
   splitUtcDateRange,
-  x402InputRowCount,
 } from "./lib/direct-source.mjs";
 
 const DEFAULT_TEMPO_RPC = "https://rpc.tempo.xyz";
@@ -62,21 +60,47 @@ async function cdpSql(sql) {
   const clientApiKey = process.env.CDP_CLIENT_API_KEY;
   if (!clientApiKey) throw new Error("CDP_CLIENT_API_KEY is required for x402 collection.");
   for (let attempt = 0; attempt < 6; attempt += 1) {
-    const response = await fetch(`https://${CDP_HOST}${CDP_PATH}`, {
-      method: "POST",
-      headers: {
-        Authorization: `Bearer ${clientApiKey}`,
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({ sql, cache: { maxAgeMs: 60_000 } }),
-    });
+    let response;
+    try {
+      response = await fetch(`https://${CDP_HOST}${CDP_PATH}`, {
+        method: "POST",
+        headers: {
+          Authorization: `Bearer ${clientApiKey}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ sql, cache: { maxAgeMs: 60_000 } }),
+        signal: AbortSignal.timeout(45_000),
+      });
+    } catch (cause) {
+      const timedOut = cause?.name === "TimeoutError";
+      if ((timedOut && attempt >= 1) || attempt === 5) {
+        const error = new Error("Coinbase CDP SQL network request failed after retries.", {
+          cause,
+        });
+        error.splitRecommended = timedOut;
+        throw error;
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 750 * 2 ** attempt));
+      continue;
+    }
     if (response.ok) {
       const body = await response.json();
       return Array.isArray(body.result) ? body.result : [];
     }
     const retryable = response.status === 429 || response.status >= 500;
-    if (!retryable || attempt === 5) {
-      throw new Error(`Coinbase CDP SQL failed (${response.status}): ${await response.text()}`);
+    if (!retryable || attempt === 5 || (response.status >= 500 && attempt >= 1)) {
+      const body = await response.text();
+      const error = new Error(`Coinbase CDP SQL failed (${response.status}): ${body}`);
+      if (
+        response.status === 400 &&
+        (body.includes("TOO_MANY_ROWS_OR_BYTES") || body.includes("Limit for rows or bytes"))
+      ) {
+        error.tooManyRows = true;
+      }
+      if (response.status >= 500) {
+        error.splitRecommended = true;
+      }
+      throw error;
     }
     const retryAfter = Number.parseFloat(response.headers.get("retry-after") ?? "");
     const delay = Number.isFinite(retryAfter) ? retryAfter * 1_000 : 750 * 2 ** attempt;
@@ -90,8 +114,12 @@ async function collectX402({ from, to, options }) {
   const addresses = [...new Set(registry.addresses.map((entry) => entry.address.toLowerCase()))];
   const tokenAddress = registry.tokenAddress.toLowerCase();
   const dailySql = buildX402DailySql({ addresses, tokenAddress, from, to });
-  const windowSql = buildX402WindowSql({ addresses, tokenAddress, from, to });
-  const queryHash = sha256Hex(JSON.stringify({ dailySql, windowSql }));
+  const multiLegSql = buildX402MultiLegSql({ addresses, tokenAddress, from, to });
+  const queryHash = sha256Hex(JSON.stringify({
+    dailySql,
+    multiLegSql,
+    transferClassification: "ordered-receive-forward-terminal-v1",
+  }));
   if (options.dryRun) {
     return {
       dryRun: true,
@@ -100,30 +128,91 @@ async function collectX402({ from, to, options }) {
       registryAddresses: addresses.length,
       registryFacilitators: Object.keys(registry.facilitators).length,
       dailySql,
-      windowSql,
+      multiLegSql,
     };
   }
-  const [rows, windowRows] = await Promise.all([cdpSql(dailySql), cdpSql(windowSql)]);
-  const populated = normalizeX402DailyRows(rows);
-  const windowSummary = {
-    rangeStart: from.toISOString(),
-    rangeEnd: to.toISOString(),
-    ...normalizeX402WindowRow(windowRows[0]),
-  };
+
+  async function collectWithSplit(builder, rangeStart, rangeEnd, depth = 0) {
+    try {
+      return await cdpSql(builder({ addresses, tokenAddress, from: rangeStart, to: rangeEnd }));
+    } catch (error) {
+      const duration = rangeEnd.getTime() - rangeStart.getTime();
+      if (
+        (!error.tooManyRows && !error.splitRecommended) ||
+        duration <= 15 * 60 * 1_000 ||
+        depth >= 12
+      ) {
+        throw error;
+      }
+      const middle = new Date(
+        Math.floor((rangeStart.getTime() + duration / 2) / 60_000) * 60_000,
+      );
+      if (middle <= rangeStart || middle >= rangeEnd) throw error;
+      const left = await collectWithSplit(builder, rangeStart, middle, depth + 1);
+      const right = await collectWithSplit(builder, middle, rangeEnd, depth + 1);
+      return [...left, ...right];
+    }
+  }
+
+  async function collectRangesWithConcurrency(ranges, concurrency, label, collectRange) {
+    const results = new Array(ranges.length);
+    let nextIndex = 0;
+    async function worker() {
+      while (nextIndex < ranges.length) {
+        const index = nextIndex;
+        nextIndex += 1;
+        results[index] = await collectRange(ranges[index]);
+        process.stderr.write(
+          `Collected x402 ${label} ${index + 1}/${ranges.length}: ` +
+            `${ranges[index].from.toISOString()}–${ranges[index].to.toISOString()}\n`,
+        );
+      }
+    }
+    await Promise.all(
+      Array.from({ length: Math.min(concurrency, ranges.length) }, () => worker()),
+    );
+    return results.flat();
+  }
+
+  const sqlConcurrency = Number.parseInt(options["sql-concurrency"] ?? "3", 10);
+  if (!Number.isSafeInteger(sqlConcurrency) || sqlConcurrency < 1 || sqlConcurrency > 6) {
+    throw new Error("--sql-concurrency must be an integer between 1 and 6.");
+  }
+  const dailyRanges = splitUtcDateRange(from, to);
+  process.stderr.write("Collecting x402 single-leg aggregates…\n");
+  const singleRows = await collectRangesWithConcurrency(
+    dailyRanges,
+    sqlConcurrency,
+    "single-leg aggregates",
+    (range) => collectWithSplit(buildX402DailySql, range.from, range.to),
+  );
+  const multiLegRows = await collectRangesWithConcurrency(
+    dailyRanges,
+    sqlConcurrency,
+    "transfer routing",
+    (range) => collectWithSplit(buildX402MultiLegSql, range.from, range.to),
+  );
+  const { metrics: populated, windowSummary } = aggregateX402TerminalPayments({
+    singleRows,
+    multiLegRows,
+    from,
+    to,
+  });
   const template = populated[0] ?? {
     measurementUnit: "onchain_settlement",
     evidenceLevel: "deterministic",
     isAdjusted: false,
     limitation:
-      "Base USDC transactions submitted by the public facilitator-address registry. Transaction hashes are deduplicated, " +
-      "but proxy pass-through transfer volume and identities remain unadjusted; non-Base and non-USDC x402 payments are excluded.",
+      "Base USDC settlements submitted by the versioned public facilitator registry. Each receive-then-forward proxy chain counts once at the payer's original amount and is attributed to the terminal recipient. Testing, self-payment, unresolved ownership, non-Base, and non-USDC activity remain unadjusted.",
   };
   return {
     sourceKey: "direct:x402:base-usdc:cdp-sql",
     protocol: "x402",
     network: "base",
     queryHash,
-    inputRowCount: x402InputRowCount(rows),
+    inputRowCount:
+      singleRows.reduce((total, row) => total + Number(row.transfer_count ?? 0), 0) +
+      multiLegRows.length,
     metrics: fillDailyMetricRange(from, to, populated, template),
     windowSummary,
     coverage: {

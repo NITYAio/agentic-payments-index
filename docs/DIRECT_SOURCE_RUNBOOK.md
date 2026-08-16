@@ -1,6 +1,7 @@
 # Direct-source indexing runbook
 
-Status: implementation complete; credentials, backfill, reconciliation, and production cutover pending.
+Status: independent collection and terminal-recipient normalization implemented;
+production cutover pending final validation and deployment.
 
 ## Launch scope
 
@@ -8,14 +9,22 @@ The first independently indexed release is intentionally narrow:
 
 | Protocol | Network and asset | Primary evidence | Published unit | Explicit exclusions |
 |---|---|---|---|---|
-| x402 | Base USDC | Coinbase CDP SQL over Base events, filtered to the open facilitator-address registry | Distinct facilitator-submitted onchain settlements | Solana, Polygon, non-USDC assets, and quality adjustment of proxy transfer legs |
+| x402 | Base USDC | Coinbase CDP SQL over Base events, filtered to the open facilitator-address registry | Facilitator-associated payments, counted once at the payer's original amount and attributed to the terminal recipient | Solana, Polygon, non-USDC assets, and quality adjustment for testing or self-payments |
 | MPP | Tempo pathUSD and USDC.e | Public Tempo JSON-RPC `TransferWithMemo` logs carrying the official MPP attribution tag | Distinct MPP-attributed protocol payments | Off-chain session vouchers, custom merchant memos, other assets, and older untagged clients |
+
+x402 terminal-recipient classification and its audit measures are specified in
+[`X402_TERMINAL_RECIPIENT_METHOD.md`](./X402_TERMINAL_RECIPIENT_METHOD.md).
 
 The collectors never accept MPPScan or x402scan totals as primary activity evidence. Their public outputs may be used only for reconciliation. The x402 facilitator registry is vendored open metadata under its MIT license; Base activity is queried independently.
 
 ## Cost controls
 
-- Coinbase CDP SQL includes 1,000 queries each month. The daily aggregate collector uses approximately 30 queries per month; the initial 30-day backfill uses one query.
+- Coinbase CDP SQL includes a monthly query allowance. Dense x402 windows are
+  divided into UTC-day slices and may be divided again when a response reaches
+  provider row or execution limits, so query use depends on activity rather
+  than a fixed one-query-per-window estimate. Record actual usage after each
+  backfill. Incremental refreshes should query only new or revised slices
+  instead of rescanning history.
 - Tempo's public RPC is suitable for range verification but rate-limited during historical log scans. Tempo's official developer guide lists dRPC, Alchemy, Allium, and Goldsky as data partners. Use a dedicated dRPC archive endpoint for the backfill: try its free 210M-CU allowance first, and cap any paid month at $10 unless measured usage justifies a change.
 - D1 stores daily aggregates and compact provenance—not millions of raw transfers. The launch footprint is negligible relative to the free 5 GB allowance.
 - R2 is not required for launch. Add it later only for compressed raw-evidence archives.

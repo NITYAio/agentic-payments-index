@@ -109,6 +109,73 @@ export const monthlyIdentityActivity = sqliteTable(
   ],
 );
 
+export const cohortSnapshotRuns = sqliteTable(
+  "cohort_snapshot_runs",
+  {
+    id: text("id").primaryKey(),
+    protocol: text("protocol", { enum: ["all", "mpp", "x402"] }).notNull(),
+    sourceKeysJson: text("source_keys_json").notNull(),
+    coverageStart: text("coverage_start").notNull(),
+    coverageEnd: text("coverage_end").notNull(),
+    completeThrough: text("complete_through").notNull(),
+    checksum: text("checksum").notNull(),
+    rowCount: integer("row_count").notNull().default(0),
+    status: text("status", {
+      enum: ["importing", "complete", "superseded"],
+    })
+      .notNull()
+      .default("importing"),
+    importedAt: text("imported_at").notNull(),
+    completedAt: text("completed_at"),
+  },
+  (table) => [
+    uniqueIndex("cohort_snapshot_protocol_checksum_unique").on(
+      table.protocol,
+      table.checksum,
+    ),
+    index("cohort_snapshot_protocol_status_idx").on(
+      table.protocol,
+      table.status,
+      table.completeThrough,
+    ),
+  ],
+);
+
+export const cohortSnapshotCells = sqliteTable(
+  "cohort_snapshot_cells",
+  {
+    id: text("id").primaryKey(),
+    runId: text("run_id")
+      .notNull()
+      .references(() => cohortSnapshotRuns.id, { onDelete: "cascade" }),
+    role: text("role", { enum: ["payer", "payee"] }).notNull(),
+    mode: text("mode", { enum: ["activity", "acquisition"] }).notNull(),
+    cohortMonth: text("cohort_month").notNull(),
+    offset: integer("offset").notNull(),
+    calendarMonth: text("calendar_month").notNull(),
+    cohortSize: integer("cohort_size").notNull(),
+    retained: integer("retained").notNull(),
+    leftCensored: integer("left_censored", { mode: "boolean" })
+      .notNull()
+      .default(false),
+  },
+  (table) => [
+    uniqueIndex("cohort_snapshot_cell_unique").on(
+      table.runId,
+      table.role,
+      table.mode,
+      table.cohortMonth,
+      table.offset,
+    ),
+    index("cohort_snapshot_query_idx").on(
+      table.runId,
+      table.role,
+      table.mode,
+      table.cohortMonth,
+    ),
+  ],
+);
+
 export const publicRateLimits = sqliteTable(
   "public_rate_limits",
   {
@@ -175,7 +242,10 @@ export const dailyProtocolMetrics = sqliteTable(
     chargeCount: integer("charge_count").notNull().default(0),
     sessionCount: integer("session_count").notNull().default(0),
     settlementCount: integer("settlement_count").notNull(),
+    rawTransferCount: integer("raw_transfer_count").notNull().default(0),
     volumeUsdMicros: integer("volume_usd_micros").notNull(),
+    recipientVolumeUsdMicros: integer("recipient_volume_usd_micros").notNull().default(0),
+    grossVolumeUsdMicros: integer("gross_volume_usd_micros").notNull().default(0),
     chargeVolumeUsdMicros: integer("charge_volume_usd_micros").notNull().default(0),
     sessionVolumeUsdMicros: integer("session_volume_usd_micros").notNull().default(0),
     buyerCount: integer("buyer_count").notNull(),
@@ -223,7 +293,10 @@ export const protocolWindowMetrics = sqliteTable(
     chargeCount: integer("charge_count").notNull().default(0),
     sessionCount: integer("session_count").notNull().default(0),
     settlementCount: integer("settlement_count").notNull(),
+    rawTransferCount: integer("raw_transfer_count").notNull().default(0),
     volumeUsdMicros: integer("volume_usd_micros").notNull(),
+    recipientVolumeUsdMicros: integer("recipient_volume_usd_micros").notNull().default(0),
+    grossVolumeUsdMicros: integer("gross_volume_usd_micros").notNull().default(0),
     chargeVolumeUsdMicros: integer("charge_volume_usd_micros").notNull().default(0),
     sessionVolumeUsdMicros: integer("session_volume_usd_micros").notNull().default(0),
     buyerCount: integer("buyer_count").notNull(),

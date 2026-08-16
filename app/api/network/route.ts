@@ -73,6 +73,11 @@ type DailyRow = {
   seller_count: number;
 };
 
+type CoverageRangeRow = {
+  coverage_start: string | null;
+  coverage_end: string | null;
+};
+
 type MppService = Omit<Service, "protocol" | "network">;
 
 type X402Seller = {
@@ -94,7 +99,7 @@ type X402Seller = {
 const MPP_UPSTREAM = "https://mppscan.com/api/trpc";
 const X402_UPSTREAM = "https://www.x402scan.com/api/trpc";
 const PERIOD_KEYS: PeriodKey[] = ["0", "1", "7", "30"];
-const DIRECT_PERIOD_KEYS: Array<Exclude<PeriodKey, "0">> = ["1", "7", "30"];
+const DIRECT_PERIOD_KEYS: PeriodKey[] = ["0", "1", "7", "30"];
 
 function emptyStats(): Stats {
   return {
@@ -260,27 +265,45 @@ async function loadDirectProtocol(protocol: ProtocolKey): Promise<ProtocolData> 
         )
       : emptyProtocol(
           "Base direct chain evidence",
-          "USDC transfers involving the maintained x402 facilitator set on Base. These are facilitator-associated settlements and may include pass-through transfers; they are not assumed to be one payment each.",
-          "Facilitator-associated settlements",
-          "Raw USDC transfer value",
+          "USDC payments involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once at the payer's original amount and are attributed to the terminal recipient.",
+          "Facilitator-associated payments",
+          "Payment value",
         );
   const d1 = await getD1();
-  const windowResult = await d1
-    .prepare(
-      `SELECT run_id, protocol, network, range_start, range_end,
-              transaction_count, volume_usd_micros, buyer_count, seller_count
-       FROM protocol_window_metrics
-       WHERE protocol = ?
-       ORDER BY range_end DESC`,
-    )
-    .bind(protocol)
-    .all<WindowRow>();
+  const [windowResult, coverageRange] = await Promise.all([
+    d1
+      .prepare(
+        `SELECT run_id, protocol, network, range_start, range_end,
+                transaction_count, volume_usd_micros, buyer_count, seller_count
+         FROM protocol_window_metrics
+         WHERE protocol = ?
+         ORDER BY range_end DESC`,
+      )
+      .bind(protocol)
+      .all<WindowRow>(),
+    d1
+      .prepare(
+        `SELECT MIN(coverage_start) AS coverage_start, MAX(coverage_end) AS coverage_end
+         FROM source_coverage WHERE protocol = ?`,
+      )
+      .bind(protocol)
+      .first<CoverageRangeRow>(),
+  ]);
 
-  const selected = new Map<Exclude<PeriodKey, "0">, WindowRow>();
+  const selected = new Map<PeriodKey, WindowRow>();
   for (const row of windowResult.results) {
     const days = Math.round(windowDurationDays(row));
-    const key = String(days) as Exclude<PeriodKey, "0">;
-    if (DIRECT_PERIOD_KEYS.includes(key) && !selected.has(key)) selected.set(key, row);
+    const key = String(days) as PeriodKey;
+    if (key !== "0" && DIRECT_PERIOD_KEYS.includes(key) && !selected.has(key)) {
+      selected.set(key, row);
+    }
+    if (
+      coverageRange?.coverage_start === row.range_start &&
+      coverageRange?.coverage_end === row.range_end &&
+      !selected.has("0")
+    ) {
+      selected.set("0", row);
+    }
   }
 
   const runIds = [...selected.values()].map((row) => row.run_id);
@@ -346,6 +369,14 @@ function mergeBuckets(sources: Bucket[][]): Bucket[] {
   return [...merged.values()].sort((a, b) => a.bucket_start.localeCompare(b.bucket_start));
 }
 
+function earliestTimestamp(...values: Array<string | null>) {
+  return values.filter((value): value is string => Boolean(value)).sort()[0] ?? null;
+}
+
+function latestTimestamp(...values: Array<string | null>) {
+  return values.filter((value): value is string => Boolean(value)).sort().at(-1) ?? null;
+}
+
 function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
   const periods = Object.fromEntries(
     PERIOD_KEYS.map((key) => {
@@ -361,8 +392,8 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
             uniqueRecipients: left.stats.uniqueRecipients + right.stats.uniqueRecipients,
           },
           buckets: mergeBuckets([left.buckets, right.buckets]),
-          rangeStart: left.rangeStart ?? right.rangeStart,
-          rangeEnd: left.rangeEnd ?? right.rangeEnd,
+          rangeStart: earliestTimestamp(left.rangeStart, right.rangeStart),
+          rangeEnd: latestTimestamp(left.rangeEnd, right.rangeEnd),
         },
       ];
     }),
@@ -379,7 +410,7 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
     source: "Independent Tempo + Base observations",
     live: mpp.live || x402.live,
     disclosure:
-      "Transaction and identity counts are protocol-level sums and may overlap. MPP payment value and x402 raw USDC transfer value are different measurements and are deliberately not combined.",
+      "Transaction and identity counts are protocol-level sums and may overlap. MPP and x402 payment values are each directly reconstructed, but market totals remain separate because protocol and network coverage differ.",
     measurementLabel: "Observed MPP + x402 activity",
     volumeLabel: "Not combined",
     volumeComparable: false,
@@ -409,15 +440,18 @@ export async function GET() {
       : emptyProtocol(
           "Base direct evidence unavailable",
           "x402 direct-source data is temporarily unavailable; no placeholder values are shown.",
-          "Facilitator-associated settlements",
-          "Raw USDC transfer value",
+          "Facilitator-associated payments",
+          "Payment value",
         );
   if (directoryResult.status === "fulfilled") {
     mpp.services = directoryResult.value.mpp;
     x402.services = directoryResult.value.x402;
   }
   const all = combineProtocols(mpp, x402);
-  const rangeEnds = [mpp.periods["30"].rangeEnd, x402.periods["30"].rangeEnd]
+  const rangeEnds = [
+    mpp.periods["0"].rangeEnd ?? mpp.periods["30"].rangeEnd,
+    x402.periods["0"].rangeEnd ?? x402.periods["30"].rangeEnd,
+  ]
     .filter((value): value is string => Boolean(value))
     .sort();
   return Response.json(

@@ -232,23 +232,6 @@ async function answerQuestion(
   const source = protocolData.source;
   const common = { days, protocol, source, asOf: data.asOf };
 
-  if (days === 0) {
-    return {
-      ...common,
-      eyebrow: "All-time coverage · backfill status",
-      value: "Backfill in progress",
-      change: null,
-      comparison: "Exact rolling 24-hour, 7-day, and 30-day windows are available now.",
-      formula: "Requires complete direct-source history from the first qualifying record",
-      explanation:
-        "The Index does not substitute a third-party lifetime total for incomplete direct-source history. Ask for 24 hours, 7 days, or 30 days while the all-time backfill is completed.",
-      metric: "transactions",
-      limited: true,
-      status: "All-time backfill required",
-      visualization: "none",
-    };
-  }
-
   if (intent === "cohort") {
     const request = parseCohortRequest(text, protocol);
     let cohort: CohortMatrix | null = null;
@@ -313,14 +296,17 @@ async function answerQuestion(
     return {
       ...common,
       eyebrow: `${seller ? "Service" : "Payer"} cohort retention · collector status`,
-      value: "Awaiting identity backfill",
+      value: cohort?.limitation ? "Not yet reliable" : "Awaiting identity backfill",
       change: null,
-      comparison: "The cohort engine is live, but no complete verified identity segment covers this request yet.",
+      comparison:
+        cohort?.limitation ??
+        "The cohort engine is live, but no complete verified identity segment covers this request yet.",
       formula: seller
         ? "Verified service identity × cohort month × returning-active month"
         : "Hashed protocol identity × cohort month × returning-active month",
-      explanation:
-        `The storage, privacy-preserving identity normalization, idempotent ingestion, and cohort calculation layers are ready. A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified MPP receipt or x402 settlement history has been backfilled; rolling aggregate counts remain excluded.`,
+      explanation: cohort?.limitation
+        ? "The Index will not calculate retention from recipient addresses known to include routing contracts. This result will unlock after terminal-recipient identity history is complete."
+        : `The storage, privacy-preserving identity normalization, idempotent ingestion, and cohort calculation layers are ready. A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified MPP receipt or x402 settlement history has been backfilled; rolling aggregate counts remain excluded.`,
       metric: seller ? "servers" : "buyers",
       limited: true,
       status: "Backfill required",
@@ -427,10 +413,10 @@ async function answerQuestion(
         eyebrow: `Value comparison · ${range}`,
         value: "Not directly comparable",
         change: null,
-        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 raw USDC transferred ${usd(x402.totalVolume)}`,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 payment value ${usd(x402.totalVolume)}`,
         formula: "Values shown separately; no combined share or average",
         explanation:
-          "MPP is protocol-attributed payment value. x402 is raw USDC transfer value involving the maintained facilitator set and may include pass-through transfers. Adding them or calculating a market share would imply equivalence the evidence does not establish.",
+          "MPP and x402 payment values are reconstructed with protocol-specific methods. They remain separate because protocol and network coverage differs; combining them would imply complete market coverage.",
         metric,
         limited: true,
         status: "Different measurement units",
@@ -491,10 +477,10 @@ async function answerQuestion(
         eyebrow: `Average value · ${range}`,
         value: "Not combined",
         change: null,
-        comparison: "MPP payment size and x402 facilitator-associated transfer size are shown separately.",
+        comparison: "MPP and x402 payment sizes are shown separately.",
         formula: "No combined numerator or denominator",
         explanation:
-          "The two protocols have different value attribution. Select MPP for average identified payment size or x402 for average raw facilitator-associated USDC transfer.",
+          "The protocols cover different networks and payment methods. Select MPP or x402 to calculate a protocol-specific average payment size.",
         metric,
         limited: true,
         status: "Different measurement units",
@@ -513,13 +499,13 @@ async function answerQuestion(
       : null;
     return {
       ...common,
-      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402-associated transfer"} · ${range}`,
+      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402 payment"} · ${range}`,
       value: usd(average, true),
       change: thirtyDayTrend,
       comparison:
         asksForThirtyDayChange && thirtyDayTrend !== null
           ? `30-day payment-size trend: ${percent(thirtyDayTrend)}, comparing the last third with the first third`
-          : protocol === "mpp" ? "Observed MPP payment size" : "Observed facilitator-associated transfer size",
+          : protocol === "mpp" ? "Observed MPP payment size" : "Observed x402 payment size",
       formula:
         asksForThirtyDayChange
           ? `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} payments; 30-day trend = last-segment average ÷ first-segment average − 1`
@@ -527,7 +513,7 @@ async function answerQuestion(
       explanation:
         protocol === "mpp"
           ? "Average MPP payment size is identified MPP value divided by qualifying payments. The 30-day change, when requested, is a within-window bucket trend rather than a comparison between overlapping rolling totals."
-          : "This is raw USDC value divided by facilitator-associated Base transfers. Pass-through transfers may be included, so it is not presented as average end-user x402 payment size.",
+          : "This is payer-originated USDC value divided by reconstructed x402 payments. Receive-and-forward chains count once and resolve to the terminal recipient.",
       metric,
     };
   }
@@ -589,10 +575,10 @@ async function answerQuestion(
         eyebrow: `Value measurements · ${range}`,
         value: "Not combined",
         change: null,
-        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 raw USDC transferred ${usd(x402.totalVolume)}`,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 payment value ${usd(x402.totalVolume)}`,
         formula: "Values shown separately; no combined total",
         explanation:
-          "MPP is protocol-attributed payment value. x402 is facilitator-associated raw USDC transfer value and may include pass-through activity. The Index does not add unlike measurements.",
+          "MPP and x402 payment values are reconstructed with protocol-specific methods. The Index keeps totals separate because protocol and network coverage differs.",
         metric,
         limited: true,
         status: "Different measurement units",
@@ -601,7 +587,7 @@ async function answerQuestion(
     }
     return {
       ...common,
-      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 raw USDC transfer value"} · ${range}`,
+      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 payment value"} · ${range}`,
       value: usd(current.totalVolume),
       change: null,
       comparison: `${label} directly observed value`,
@@ -609,7 +595,7 @@ async function answerQuestion(
       explanation:
         protocol === "mpp"
           ? "This is identified MPP payment value observed directly on Tempo in the requested rolling window."
-          : "This is raw USDC transfer value involving the maintained x402 facilitator set on Base. It may include pass-through transfers and is not labeled payment revenue.",
+          : "This is payer-originated USDC payment value involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once and are attributed to the terminal recipient.",
       metric,
     };
   }

@@ -1,5 +1,9 @@
 # Direct-source reconciliation — 2026-08-10
 
+> Historical audit record. This pre-normalization report is superseded by
+> [`RECONCILIATION_2026-08-16.md`](./RECONCILIATION_2026-08-16.md). Do not use
+> its x402 gross transfer value as payment volume.
+
 Status: **backfill and fixed-window identity summaries complete; public cutover
 blocked on value classification, recipient resolution, and preview approval**.
 

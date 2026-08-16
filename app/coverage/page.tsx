@@ -19,7 +19,7 @@ const protocols = [
     name: "x402",
     role: "HTTP-native payment standard",
     measurement: "Direct observation · public beta",
-    disclosure: "The Index queries Base USDC events directly and matches a versioned public facilitator registry. This is labeled facilitator-associated settlement activity and raw USDC transfer value because pass-through transfers may be included.",
+    disclosure: "The Index queries Base USDC events directly and matches a versioned public facilitator registry. Receive-and-forward chains count once at the payer's original amount and are attributed to the final recipient; recipient value and gross transfer movement are retained for audit.",
     source: "https://docs.cdp.coinbase.com/data/sql-api/welcome",
   },
   {

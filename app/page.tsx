@@ -134,7 +134,7 @@ const PERIODS = [
   { days: 1 as const, label: "24h", disabled: false },
   { days: 7 as const, label: "7d", disabled: false },
   { days: 30 as const, label: "30d", disabled: false },
-  { days: 0 as const, label: "All", disabled: true },
+  { days: 0 as const, label: "All", disabled: false },
 ];
 
 const QUESTIONS = [
@@ -385,24 +385,6 @@ function answerQuestion(
           : `the aggregate ${comparisonDays}-day period`
         : null;
 
-  if (days === 0) {
-    return {
-      eyebrow: "All-time coverage · backfill status",
-      value: "Backfill in progress",
-      change: null,
-      comparison: "Exact rolling 24-hour, 7-day, and 30-day windows are available now.",
-      formula: "Requires complete direct-source history",
-      explanation:
-        "The Index does not substitute a third-party lifetime total for incomplete direct-source history.",
-      days,
-      metric: "transactions",
-      protocol,
-      limited: true,
-      status: "All-time backfill required",
-      visualization: "none",
-    };
-  }
-
   if (/\b(previous|prior|preceding)\b/.test(text)) {
     return {
       eyebrow: "Coverage-limited comparison",
@@ -461,10 +443,10 @@ function answerQuestion(
         eyebrow: `Value comparison · ${periodLabel}`,
         value: "Not directly comparable",
         change: null,
-        comparison: `MPP payment value ${usd(mppValue)} · x402 raw USDC transferred ${usd(x402Value)}`,
+        comparison: `MPP payment value ${usd(mppValue)} · x402 payment value ${usd(x402Value)}`,
         formula: "Values shown separately; no combined share",
         explanation:
-          "MPP is protocol-attributed payment value. x402 is raw facilitator-associated USDC transfer value and may include pass-through transfers.",
+          "MPP is protocol-attributed payment value. x402 counts each reconstructed payer-to-terminal-recipient chain once at the payer's original amount. Totals remain separate because protocol and network coverage differ.",
         days,
         metric: "volume",
         protocol,
@@ -505,7 +487,7 @@ function answerQuestion(
         comparison: "Select MPP or x402 to inspect its protocol-specific average.",
         formula: "No combined numerator or denominator",
         explanation:
-          "MPP payment value and x402 raw facilitator-associated transfer value use different attribution rules.",
+          "MPP and x402 payment values use protocol-specific attribution rules, so select a protocol for its average.",
         days,
         metric: "average",
         protocol,
@@ -519,7 +501,7 @@ function answerQuestion(
       ? baseline.totalVolume / baseline.totalTransactions
       : null;
     return {
-      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402-associated transfer"} · ${periodLabel}`,
+      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402 payment"} · ${periodLabel}`,
       value: usd(value, true),
       change: benchmark === null ? null : percentageDelta(value, benchmark),
       comparison: comparisonLabel
@@ -529,7 +511,7 @@ function answerQuestion(
       explanation:
         protocol === "mpp"
           ? "This is identified MPP payment value divided by qualifying payments."
-          : "This is raw USDC value divided by facilitator-associated Base transfers. Pass-through transfers may be included.",
+          : "This is payer-originated USDC payment value divided by reconstructed x402 payments. Receive-and-forward chains count once.",
       days,
       metric: "average",
       protocol,
@@ -627,10 +609,10 @@ function answerQuestion(
         eyebrow: `Value measurements · ${periodLabel}`,
         value: "Not combined",
         change: null,
-        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 raw USDC transferred ${usd(x402.totalVolume)}`,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 payment value ${usd(x402.totalVolume)}`,
         formula: "Values shown separately; no combined total",
         explanation:
-          "MPP and x402 use different value attribution. The Index does not add unlike measurements.",
+          "MPP and x402 are reconstructed with protocol-specific methods. The Index keeps totals separate because coverage differs across protocols and networks.",
         days,
         metric: "volume",
         protocol,
@@ -646,7 +628,7 @@ function answerQuestion(
         ? baseline.totalVolume / comparisonDays
         : null;
     return {
-      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 raw USDC transfer value"} · ${periodLabel}`,
+      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 payment value"} · ${periodLabel}`,
       value: usd(current.totalVolume),
       change:
         baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
@@ -657,7 +639,7 @@ function answerQuestion(
       explanation:
         protocol === "mpp"
           ? "This is identified MPP payment value observed directly on Tempo."
-          : "This is raw USDC transfer value involving the maintained x402 facilitator set on Base; pass-through transfers may be included.",
+          : "This is payer-originated USDC value for reconstructed x402 payments involving the maintained facilitator set on Base. Routing chains count once and resolve to the terminal recipient.",
       days,
       metric: "volume",
       protocol,
@@ -1632,11 +1614,11 @@ export default function Home() {
                     yAxisTitle={
                       answer.metric === "volume"
                         ? answer.protocol === "x402"
-                          ? "Raw USDC transfer value per bucket"
+                          ? "x402 payment value per bucket"
                           : "MPP payment value per bucket"
                         : answer.metric === "average"
                           ? answer.protocol === "x402"
-                            ? "Average raw USDC transfer per bucket"
+                            ? "Average x402 payment per bucket"
                             : "Average MPP payment per bucket"
                           : answer.metric === "buyers"
                             ? "Active payer addresses per bucket"
@@ -1726,10 +1708,10 @@ export default function Home() {
                 label={selectedProtocolData.volumeLabel}
                 definition={
                   protocol === "all"
-                    ? "MPP identified payment value and x402 raw facilitator-associated USDC transfer value are different measurements, so the Index does not add them together."
+                    ? "MPP and x402 payment values are shown separately because they cover different protocols and networks."
                     : protocol === "mpp"
                       ? "The value of current-version MPP charges and settled sessions observed directly on Tempo."
-                      : "The raw value of USDC transfers involving the maintained x402 facilitator set on Base. Pass-through transfers may be included."
+                      : "Payer-originated USDC payment value involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once and resolve to the final recipient."
                 }
                 formula={
                   protocol === "all"
@@ -1738,7 +1720,7 @@ export default function Home() {
                 }
                 example={
                   protocol === "all"
-                    ? `MPP ${usd(mppSelected.totalVolume)} · x402 raw ${usd(x402Selected.totalVolume)}`
+                    ? `MPP ${usd(mppSelected.totalVolume)} · x402 ${usd(x402Selected.totalVolume)}`
                     : `${usd(selected.stats.totalVolume)} observed across the selected window.`
                 }
               />
@@ -1924,10 +1906,10 @@ export default function Home() {
             }
             definition={
               protocol === "all"
-                ? "MPP identified payment value and x402 raw facilitator-associated USDC transfer value are not equivalent and are not added together."
+                ? "MPP and x402 payment values are shown separately because their protocol and network coverage differs."
                 : protocol === "mpp"
                   ? "Value of current-version MPP charges and settled sessions observed directly on Tempo."
-                  : "Raw USDC transfer value involving the maintained x402 facilitator set on Base; pass-through transfers may be included."
+                  : "Payer-originated USDC payment value involving the maintained x402 facilitator set on Base; receive-and-forward chains count once."
             }
             formula={
               protocol === "all"
@@ -1936,7 +1918,7 @@ export default function Home() {
             }
             example={
               protocol === "all"
-                ? `MPP ${usd(mppSelected.totalVolume)} · x402 raw ${usd(x402Selected.totalVolume)}`
+                ? `MPP ${usd(mppSelected.totalVolume)} · x402 ${usd(x402Selected.totalVolume)}`
                 : `Observed value: ${usd(selected.stats.totalVolume)}.`
             }
           />
@@ -2012,7 +1994,7 @@ export default function Home() {
                   <i className="legendMpp" />
                   <b>MPP payment value {usd(mppSelected.totalVolume)}</b>
                   <i className="legendX402" />
-                  <b>x402 raw USDC transferred {usd(x402Selected.totalVolume)}</b>
+                  <b>x402 payment value {usd(x402Selected.totalVolume)}</b>
                 </div>
                 <small>Not combined</small>
               </div>
@@ -2066,9 +2048,9 @@ export default function Home() {
                 <span className="signalLabel">
                   <InfoTerm
                     label="Value measurements"
-                    definition="MPP payment value and x402 raw facilitator-associated USDC transfer value are different measurements."
+                    definition="MPP and x402 payment values are reconstructed independently and kept separate because their coverage differs."
                     formula="Values are shown separately; no combined total or average is calculated."
-                    example={`MPP ${usd(mppSelected.totalVolume)} · x402 raw ${usd(x402Selected.totalVolume)}`}
+                    example={`MPP ${usd(mppSelected.totalVolume)} · x402 ${usd(x402Selected.totalVolume)}`}
                   />
                 </span>
                 <strong>Not combined</strong>
@@ -2080,7 +2062,7 @@ export default function Home() {
                     <dd>{usd(mppSelected.totalVolume)}</dd>
                   </div>
                   <div>
-                    <dt>x402 raw USDC</dt>
+                    <dt>x402 payment value</dt>
                     <dd>{usd(x402Selected.totalVolume)}</dd>
                   </div>
                   <div>
@@ -2093,18 +2075,18 @@ export default function Home() {
               <>
                 <span className="signalLabel">
                   <InfoTerm
-                    label={protocol === "mpp" ? "Average MPP payment size" : "Average x402-associated transfer"}
+                    label={protocol === "mpp" ? "Average MPP payment size" : "Average x402 payment size"}
                     definition={
                       protocol === "mpp"
                         ? "The mean identified MPP payment value in the selected window."
-                        : "The mean raw USDC value per facilitator-associated Base transfer; this is not assumed to equal average end-user payment size."
+                        : "The mean payer-originated USDC value per reconstructed x402 payment. Receive-and-forward chains count once."
                     }
                     formula="Observed value ÷ qualifying records."
                     example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per record.`}
                   />
                 </span>
                 <strong>{usd(average, true)}</strong>
-                <p>{protocol === "mpp" ? "Average identified MPP payment." : "Average facilitator-associated USDC transfer."}</p>
+                <p>{protocol === "mpp" ? "Average identified MPP payment." : "Average reconstructed x402 payment."}</p>
                 <div className="signalRule" />
                 <dl>
                   <div>

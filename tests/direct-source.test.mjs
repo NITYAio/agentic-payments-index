@@ -4,19 +4,25 @@ import test from "node:test";
 
 import {
   aggregateMppPayments,
+  aggregateMppIdentityActivity,
   aggregateTempoLogs,
+  aggregateX402TerminalPayments,
   buildTempoLogFilter,
   buildTempoSessionLogFilter,
   buildX402DailySql,
+  buildX402IdentitySql,
+  buildX402MultiLegSql,
   buildX402WindowSql,
   createJsonRpcClient,
   fillDailyMetricRange,
   isMppAttributionMemo,
   normalizeX402DailyRows,
+  normalizeX402IdentityRows,
   normalizeX402WindowRow,
   splitUtcDateRange,
   TEMPO_CHANNEL_RESERVE,
   TEMPO_SETTLED_TOPIC,
+  x402TerminalIdentityActivities,
 } from "../scripts/lib/direct-source.mjs";
 
 const payerTopic = `0x${"0".repeat(24)}1111111111111111111111111111111111111111`;
@@ -79,6 +85,24 @@ test("JSON-RPC collection backs off on rate limits and preserves request identit
           headers: { "retry-after": "0" },
         });
       }
+      return Response.json({ jsonrpc: "2.0", id: requestIds[0], result: "0x2a" });
+    },
+  });
+  assert.equal(await rpc("eth_blockNumber", []), "0x2a");
+  assert.deepEqual(requestIds, [1, 1]);
+});
+
+test("JSON-RPC collection retries transient network failures", async () => {
+  const requestIds = [];
+  let calls = 0;
+  const rpc = createJsonRpcClient({
+    url: "https://rpc.example",
+    minDelayMs: 0,
+    sleepImpl: async () => {},
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      requestIds.push(JSON.parse(init.body).id);
+      if (calls === 1) throw new TypeError("fetch failed");
       return Response.json({ jsonrpc: "2.0", id: requestIds[0], result: "0x2a" });
     },
   });
@@ -159,6 +183,28 @@ test("MPP aggregation combines charges and session settlements without mixing id
   assert.equal(result.metrics[0].sessionVolumeUsdMicros, 2_000_000);
 });
 
+test("MPP identity activity is hashed locally and keeps service identity schemes explicit", () => {
+  const activity = aggregateMppIdentityActivity({
+    chargeLogs: [
+      tempoLog({ data: "0x0f4240", index: 1, memo: mppMemoOne, seller: sellerOneTopic }),
+      tempoLog({ data: "0x1e8480", index: 2, memo: mppMemoOne, seller: sellerTwoTopic }),
+    ],
+    sessionLogs: [
+      tempoSessionLog({
+        data: abiWords(3_000_000n, 2_000_000n, 3_000_000n),
+        index: 3,
+        payer: payerTopic,
+        payee: sellerTwoTopic,
+      }),
+    ],
+    blockTimestamps: new Map([[10, new Date("2026-08-07T12:00:00.000Z")]]),
+  });
+  assert.equal(activity.filter((row) => row.role === "payer").length, 1);
+  assert.equal(activity.find((row) => row.role === "payer").transactionCount, 2);
+  assert.equal(activity.find((row) => row.identityScheme === "mpp-server-fingerprint").transactionCount, 1);
+  assert.equal(activity.some((row) => JSON.stringify(row).includes("1111111111111111")), false);
+});
+
 test("x402 SQL pins Base USDC, facilitators, and an exact half-open window", () => {
   const sql = buildX402DailySql({
     addresses: ["0x1111111111111111111111111111111111111111"],
@@ -166,8 +212,10 @@ test("x402 SQL pins Base USDC, facilitators, and an exact half-open window", () 
     from: new Date("2026-08-01T00:00:00.000Z"),
     to: new Date("2026-08-08T00:00:00.000Z"),
   });
-  assert.match(sql, /uniqExact\(transaction_hash\)/);
+  assert.match(sql, /HAVING count\(\) = 1/);
+  assert.match(sql, /groupUniqArray\(from_address\)/);
   assert.match(sql, /transaction_from IN/);
+  assert.match(sql, /action = 'added'/);
   assert.match(sql, /2026-08-01 00:00:00\.000/);
   assert.match(sql, /2026-08-08 00:00:00\.000/);
 });
@@ -192,6 +240,31 @@ test("x402 window SQL and normalization preserve period-wide distinct identities
   assert.equal(summary.transactionCount, 12);
 });
 
+test("x402 identity SQL selects a role and hashes normalized output", () => {
+  const sql = buildX402IdentitySql({
+    addresses: ["0x1111111111111111111111111111111111111111"],
+    tokenAddress: "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    from: new Date("2026-08-01T00:00:00.000Z"),
+    to: new Date("2026-09-01T00:00:00.000Z"),
+    role: "payee",
+  });
+  assert.match(sql, /lower\(to_address\)/);
+  assert.match(sql, /HAVING count\(\) = 1/);
+  const rows = normalizeX402IdentityRows(
+    [{
+      activity_month: "2026-08",
+      identity_key: "0x2222222222222222222222222222222222222222",
+      transaction_count: "3",
+      volume_raw: "9000",
+      first_seen_at: "2026-08-01 00:00:01.000",
+      last_seen_at: "2026-08-30 23:59:59.000",
+    }],
+    "payee",
+  );
+  assert.equal(rows[0].identityHash.length, 64);
+  assert.equal(JSON.stringify(rows).includes("0x2222222222222222222222222222222222222222"), false);
+});
+
 test("x402 SQL rows preserve integer USDC micros and disclose unadjusted identities", () => {
   const metrics = normalizeX402DailyRows([
     {
@@ -207,6 +280,79 @@ test("x402 SQL rows preserve integer USDC micros and disclose unadjusted identit
   assert.equal(metrics[0].volumeUsdMicros, 2_500_000);
   assert.equal(metrics[0].isAdjusted, false);
   assert.match(metrics[0].limitation, /proxy pass-through/);
+});
+
+test("x402 proxy chains count one payer payment and attribute the terminal recipient", () => {
+  const addresses = ["0x1111111111111111111111111111111111111111"];
+  const tokenAddress = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
+  const multiSql = buildX402MultiLegSql({
+    addresses,
+    tokenAddress,
+    from: new Date("2026-08-07T00:00:00.000Z"),
+    to: new Date("2026-08-08T00:00:00.000Z"),
+  });
+  assert.match(multiSql, /HAVING count\(\) > 1/);
+  assert.match(multiSql, /ORDER BY block_timestamp ASC, transaction_hash ASC, log_index ASC/);
+
+  const hash = `0x${"a".repeat(64)}`;
+  const buyer = "0x2222222222222222222222222222222222222222";
+  const proxy = "0x3333333333333333333333333333333333333333";
+  const merchant = "0x4444444444444444444444444444444444444444";
+  const fee = "0x5555555555555555555555555555555555555555";
+  const multiLegRows = [
+    {
+      block_timestamp: "2026-08-07 12:00:00.000",
+      transaction_hash: hash,
+      log_index: "1",
+      from_address: buyer,
+      to_address: proxy,
+      amount: "100000000",
+    },
+    {
+      block_timestamp: "2026-08-07 12:00:00.000",
+      transaction_hash: hash,
+      log_index: "2",
+      from_address: proxy,
+      to_address: merchant,
+      amount: "99000000",
+    },
+    {
+      block_timestamp: "2026-08-07 12:00:00.000",
+      transaction_hash: hash,
+      log_index: "3",
+      from_address: proxy,
+      to_address: fee,
+      amount: "1000000",
+    },
+  ];
+  const result = aggregateX402TerminalPayments({
+    from: new Date("2026-08-07T00:00:00.000Z"),
+    to: new Date("2026-08-08T00:00:00.000Z"),
+    singleRows: [{
+      activity_date: "2026-08-07",
+      transaction_count: "1",
+      transfer_count: "1",
+      buyer_addresses: ["0x6666666666666666666666666666666666666666"],
+      seller_addresses: ["0x7777777777777777777777777777777777777777"],
+      volume_raw: "50000000",
+    }],
+    multiLegRows,
+  });
+
+  assert.equal(result.windowSummary.transactionCount, 2);
+  assert.equal(result.windowSummary.volumeUsdMicros, 150_000_000);
+  assert.equal(result.windowSummary.recipientVolumeUsdMicros, 149_000_000);
+  assert.equal(result.windowSummary.grossVolumeUsdMicros, 250_000_000);
+  assert.equal(result.windowSummary.rawTransferCount, 4);
+  assert.equal(result.windowSummary.buyerCount, 2);
+  assert.equal(result.windowSummary.sellerCount, 2);
+
+  const identities = x402TerminalIdentityActivities(multiLegRows);
+  assert.equal(identities.length, 2);
+  assert.equal(identities.find((row) => row.role === "payer").volumeUsdMicros, 100_000_000);
+  assert.equal(identities.find((row) => row.role === "payee").volumeUsdMicros, 99_000_000);
+  assert.equal(JSON.stringify(identities).includes(proxy), false);
+  assert.equal(JSON.stringify(identities).includes(fee), false);
 });
 
 test("daily metric ranges include explicit zero-activity days", () => {

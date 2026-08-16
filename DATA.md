@@ -9,7 +9,7 @@ not relicense data, names, logos, or editorial content supplied by third parties
 | Protocol | Source | Used for | Current state |
 |---|---|---|---|
 | MPP | Tempo chain evidence | Current-version MPP charges, settled sessions, values, payer and server identities | Direct, unadjusted observation |
-| x402 | Base USDC chain evidence + versioned facilitator registry | Facilitator-associated transfers, raw USDC value, payer and recipient addresses | Direct, unadjusted observation |
+| x402 | Base USDC chain evidence + versioned facilitator registry | Facilitator-associated payments, payer value counted once, terminal recipients, recipient net value, and gross transfer movement | Direct structural normalization; quality filters remain unadjusted |
 | Service directory | [MPPScan](https://mppscan.com) and [x402scan](https://www.x402scan.com) | Paginated named service origins only | Directory layer; not headline metrics |
 
 The index records the source, retrieval time, requested window, and material

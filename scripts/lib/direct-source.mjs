@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const COLLECTOR_VERSION = "2026-08-10.1";
+export const COLLECTOR_VERSION = "2026-08-15.1";
 export const MPP_MEMO_PREFIX = "0xef1ed71201";
 export const TEMPO_CHANNEL_RESERVE = "0x4d50500000000000000000000000000000000000";
 export const TEMPO_SETTLED_TOPIC =
@@ -30,11 +30,25 @@ export function createJsonRpcClient({
         if (waitForSlot > 0) await sleepImpl(waitForSlot);
         lastRequestAt = Date.now();
 
-        const response = await fetchImpl(url, {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }),
-        });
+        let response;
+        try {
+          response = await fetchImpl(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ jsonrpc: "2.0", id: requestId, method, params }),
+          });
+        } catch (cause) {
+          if (attempt === maxAttempts - 1) {
+            const error = new Error(
+              `JSON-RPC ${method} network request failed after ${maxAttempts} attempts.`,
+              { cause },
+            );
+            error.nonSplittable = true;
+            throw error;
+          }
+          await sleepImpl(500 * 2 ** attempt);
+          continue;
+        }
         if (response.ok) {
           const body = await response.json();
           if (body.error) {
@@ -284,6 +298,194 @@ export function aggregateTempoLogs(logs, blockTimestamps) {
   return aggregateMppPayments({ chargeLogs: logs, sessionLogs: [], blockTimestamps });
 }
 
+export function aggregateMppIdentityActivity({ chargeLogs, sessionLogs, blockTimestamps }) {
+  const aggregates = new Map();
+
+  function timestampFor(log) {
+    if (typeof log.blockNumber !== "string") return null;
+    const timestamp = blockTimestamps.get(Number.parseInt(log.blockNumber, 16));
+    if (!timestamp) throw new Error(`Missing timestamp for Tempo block ${log.blockNumber}.`);
+    return timestamp;
+  }
+
+  function add({ role, scheme, identity, payment, contribution, amount, timestamp }) {
+    const activityMonth = timestamp.toISOString().slice(0, 7);
+    const normalizedIdentity = identity.toLowerCase();
+    const key = [role, scheme, normalizedIdentity, activityMonth].join("|");
+    const aggregate = aggregates.get(key) ?? {
+      role,
+      identityScheme: scheme,
+      identityHash: sha256Hex(`mpp|tempo|${scheme}|${normalizedIdentity}`),
+      activityMonth,
+      payments: new Set(),
+      contributions: new Set(),
+      volumeUsdMicros: 0n,
+      firstSeenAt: timestamp.toISOString(),
+      lastSeenAt: timestamp.toISOString(),
+      evidenceLevel: "deterministic",
+    };
+    aggregate.payments.add(payment);
+    if (!aggregate.contributions.has(contribution)) {
+      aggregate.contributions.add(contribution);
+      aggregate.volumeUsdMicros += amount;
+    }
+    const occurredAt = timestamp.toISOString();
+    if (occurredAt < aggregate.firstSeenAt) aggregate.firstSeenAt = occurredAt;
+    if (occurredAt > aggregate.lastSeenAt) aggregate.lastSeenAt = occurredAt;
+    aggregates.set(key, aggregate);
+  }
+
+  for (const log of chargeLogs) {
+    const topics = Array.isArray(log.topics) ? log.topics : [];
+    const memo = topics[3];
+    if (!TEMPO_USD_TOKENS.has(String(log.address ?? "").toLowerCase())) continue;
+    if (!isMppAttributionMemo(memo) || !topics[1]) continue;
+    const timestamp = timestampFor(log);
+    if (!timestamp || typeof log.transactionHash !== "string") continue;
+    const payment = `charge:${log.transactionHash.toLowerCase()}|${memo.toLowerCase()}`;
+    const contribution = `${log.transactionHash.toLowerCase()}|${String(log.logIndex ?? "0x0").toLowerCase()}`;
+    const amount = BigInt(log.data ?? "0x0");
+    add({
+      role: "payer",
+      scheme: "evm",
+      identity: decodeIndexedAddress(topics[1]),
+      payment,
+      contribution,
+      amount,
+      timestamp,
+    });
+    add({
+      role: "payee",
+      scheme: "mpp-server-fingerprint",
+      identity: decodeMppServerFingerprint(memo),
+      payment,
+      contribution,
+      amount,
+      timestamp,
+    });
+  }
+
+  for (const log of sessionLogs) {
+    const topics = Array.isArray(log.topics) ? log.topics : [];
+    if (String(log.address ?? "").toLowerCase() !== TEMPO_CHANNEL_RESERVE) continue;
+    if (String(topics[0] ?? "").toLowerCase() !== TEMPO_SETTLED_TOPIC) continue;
+    if (!topics[2] || !topics[3] || typeof log.transactionHash !== "string") continue;
+    const words = String(log.data ?? "0x").slice(2).match(/.{64}/g) ?? [];
+    if (words.length < 3) continue;
+    const timestamp = timestampFor(log);
+    if (!timestamp) continue;
+    const payment = `session:${log.transactionHash.toLowerCase()}|${String(log.logIndex ?? "0x0").toLowerCase()}`;
+    const amount = BigInt(`0x${words[1]}`);
+    add({
+      role: "payer",
+      scheme: "evm",
+      identity: decodeIndexedAddress(topics[2]),
+      payment,
+      contribution: payment,
+      amount,
+      timestamp,
+    });
+    add({
+      role: "payee",
+      scheme: "evm",
+      identity: decodeIndexedAddress(topics[3]),
+      payment,
+      contribution: payment,
+      amount,
+      timestamp,
+    });
+  }
+
+  return [...aggregates.values()]
+    .map((aggregate) => ({
+      role: aggregate.role,
+      identityScheme: aggregate.identityScheme,
+      identityHash: aggregate.identityHash,
+      activityMonth: aggregate.activityMonth,
+      transactionCount: aggregate.payments.size,
+      volumeUsdMicros: safeNumber(aggregate.volumeUsdMicros, "MPP identity USD volume"),
+      firstSeenAt: aggregate.firstSeenAt,
+      lastSeenAt: aggregate.lastSeenAt,
+      evidenceLevel: aggregate.evidenceLevel,
+    }))
+    .sort((left, right) =>
+      [left.activityMonth, left.role, left.identityScheme, left.identityHash]
+        .join("|")
+        .localeCompare([right.activityMonth, right.role, right.identityScheme, right.identityHash].join("|")),
+    );
+}
+
+export function buildX402IdentitySql({ addresses, tokenAddress, from, to, role }) {
+  if (role !== "payer" && role !== "payee") throw new Error("x402 identity role is invalid.");
+  if (!Array.isArray(addresses) || addresses.length < 1) {
+    throw new Error("At least one x402 facilitator address is required.");
+  }
+  for (const address of [...addresses, tokenAddress]) {
+    if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error(`Invalid Base address: ${address}`);
+  }
+  const facilitatorList = addresses.map((address) => `'${address}'`).join(",\n        ");
+  const identityParameter = role === "payer" ? "from" : "to";
+  return `WITH eligible AS (
+      SELECT
+        block_timestamp,
+        transaction_hash,
+        parameters['from']::String AS from_address,
+        parameters['to']::String AS to_address,
+        parameters['value']::UInt256 AS amount
+      FROM base.events
+      WHERE event_signature = 'Transfer(address,address,uint256)'
+        AND address = '${tokenAddress}'
+        AND transaction_from IN (
+          ${facilitatorList}
+        )
+        AND block_timestamp >= '${formatSqlTimestamp(from)}'
+        AND block_timestamp < '${formatSqlTimestamp(to)}'
+        AND action = 'added'
+    ), single_leg_hashes AS (
+      SELECT transaction_hash
+      FROM eligible
+      GROUP BY transaction_hash
+      HAVING count() = 1
+    )
+    SELECT
+      formatDateTime(block_timestamp, '%Y-%m') AS activity_month,
+      lower(${identityParameter === "from" ? "from_address" : "to_address"}) AS identity_key,
+      uniqExact(transaction_hash) AS transaction_count,
+      sum(amount) AS volume_raw,
+      min(block_timestamp) AS first_seen_at,
+      max(block_timestamp) AS last_seen_at
+    FROM eligible
+    WHERE transaction_hash IN (SELECT transaction_hash FROM single_leg_hashes)
+    GROUP BY activity_month, identity_key
+    ORDER BY activity_month ASC, identity_key ASC`;
+}
+
+export function normalizeX402IdentityRows(rows, role) {
+  if (!Array.isArray(rows)) throw new Error("CDP SQL identity result must be an array.");
+  if (role !== "payer" && role !== "payee") throw new Error("x402 identity role is invalid.");
+  return rows.map((row) => {
+    const activityMonth = String(row.activity_month ?? "").slice(0, 7);
+    const identity = String(row.identity_key ?? "").toLowerCase();
+    if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(activityMonth)) {
+      throw new Error(`Unexpected x402 activity month: ${activityMonth}`);
+    }
+    if (!/^0x[0-9a-f]{40}$/.test(identity)) {
+      throw new Error("Unexpected x402 identity key.");
+    }
+    return {
+      role,
+      identityScheme: "evm",
+      identityHash: sha256Hex(`x402|base|evm|${identity}`),
+      activityMonth,
+      transactionCount: numericResult(row.transaction_count, "x402 identity transaction count"),
+      volumeUsdMicros: numericResult(row.volume_raw, "x402 identity USD volume"),
+      firstSeenAt: sqlResultTimestamp(row.first_seen_at),
+      lastSeenAt: sqlResultTimestamp(row.last_seen_at),
+      evidenceLevel: "deterministic",
+    };
+  });
+}
+
 export function buildX402DailySql({ addresses, tokenAddress, from, to }) {
   if (!Array.isArray(addresses) || addresses.length < 1) {
     throw new Error("At least one x402 facilitator address is required.");
@@ -292,23 +494,82 @@ export function buildX402DailySql({ addresses, tokenAddress, from, to }) {
     if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error(`Invalid Base address: ${address}`);
   }
   const facilitatorList = addresses.map((address) => `'${address}'`).join(",\n        ");
-  return `SELECT
+  return `WITH eligible AS (
+      SELECT
+        block_timestamp,
+        transaction_hash,
+        lower(parameters['from']::String) AS from_address,
+        lower(parameters['to']::String) AS to_address,
+        parameters['value']::UInt256 AS amount
+      FROM base.events
+      WHERE event_signature = 'Transfer(address,address,uint256)'
+        AND address = '${tokenAddress}'
+        AND transaction_from IN (
+          ${facilitatorList}
+        )
+        AND block_timestamp >= '${formatSqlTimestamp(from)}'
+        AND block_timestamp < '${formatSqlTimestamp(to)}'
+        AND action = 'added'
+    ), single_leg_hashes AS (
+      SELECT transaction_hash
+      FROM eligible
+      GROUP BY transaction_hash
+      HAVING count() = 1
+    )
+    SELECT
       toDate(block_timestamp) AS activity_date,
-      uniqExact(transaction_hash) AS transaction_count,
+      count() AS transaction_count,
       count() AS transfer_count,
-      uniqExact(parameters['from']::String) AS buyer_count,
-      uniqExact(parameters['to']::String) AS seller_count,
-      sum(parameters['value']::UInt256) AS volume_raw
-    FROM base.events
-    WHERE event_signature = 'Transfer(address,address,uint256)'
-      AND address = '${tokenAddress}'
-      AND transaction_from IN (
-        ${facilitatorList}
-      )
-      AND block_timestamp >= '${formatSqlTimestamp(from)}'
-      AND block_timestamp < '${formatSqlTimestamp(to)}'
+      groupUniqArray(from_address) AS buyer_addresses,
+      groupUniqArray(to_address) AS seller_addresses,
+      sum(amount) AS volume_raw
+    FROM eligible
+    WHERE transaction_hash IN (SELECT transaction_hash FROM single_leg_hashes)
     GROUP BY activity_date
     ORDER BY activity_date ASC`;
+}
+
+export function buildX402MultiLegSql({ addresses, tokenAddress, from, to }) {
+  if (!Array.isArray(addresses) || addresses.length < 1) {
+    throw new Error("At least one x402 facilitator address is required.");
+  }
+  for (const address of [...addresses, tokenAddress]) {
+    if (!/^0x[0-9a-f]{40}$/.test(address)) throw new Error(`Invalid Base address: ${address}`);
+  }
+  const facilitatorList = addresses.map((address) => `'${address}'`).join(",\n        ");
+  return `WITH eligible AS (
+      SELECT
+        block_timestamp,
+        transaction_hash,
+        log_index,
+        lower(parameters['from']::String) AS from_address,
+        lower(parameters['to']::String) AS to_address,
+        parameters['value']::UInt256 AS amount
+      FROM base.events
+      WHERE event_signature = 'Transfer(address,address,uint256)'
+        AND address = '${tokenAddress}'
+        AND transaction_from IN (
+          ${facilitatorList}
+        )
+        AND block_timestamp >= '${formatSqlTimestamp(from)}'
+        AND block_timestamp < '${formatSqlTimestamp(to)}'
+        AND action = 'added'
+    ), multi_leg_hashes AS (
+      SELECT transaction_hash
+      FROM eligible
+      GROUP BY transaction_hash
+      HAVING count() > 1
+    )
+    SELECT
+      block_timestamp,
+      transaction_hash,
+      log_index,
+      from_address,
+      to_address,
+      amount
+    FROM eligible
+    WHERE transaction_hash IN (SELECT transaction_hash FROM multi_leg_hashes)
+    ORDER BY block_timestamp ASC, transaction_hash ASC, log_index ASC`;
 }
 
 export function buildX402WindowSql({ addresses, tokenAddress, from, to }) {
@@ -332,7 +593,277 @@ export function buildX402WindowSql({ addresses, tokenAddress, from, to }) {
         ${facilitatorList}
       )
       AND block_timestamp >= '${formatSqlTimestamp(from)}'
-      AND block_timestamp < '${formatSqlTimestamp(to)}'`;
+      AND block_timestamp < '${formatSqlTimestamp(to)}'
+      AND action = 'added'`;
+}
+
+function normalizeAddressArray(value, field) {
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array.`);
+  return value.map((address) => {
+    const normalized = String(address ?? "").toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(normalized)) {
+      throw new Error(`Unexpected ${field} address.`);
+    }
+    return normalized;
+  });
+}
+
+export function normalizeX402MultiLegRows(rows) {
+  if (!Array.isArray(rows)) throw new Error("CDP SQL multi-leg result must be an array.");
+  return rows.map((row) => {
+    const transactionHash = String(row.transaction_hash ?? "").toLowerCase();
+    const from = String(row.from_address ?? "").toLowerCase();
+    const to = String(row.to_address ?? "").toLowerCase();
+    if (!/^0x[0-9a-f]{64}$/.test(transactionHash)) {
+      throw new Error("Unexpected x402 transaction hash.");
+    }
+    if (!/^0x[0-9a-f]{40}$/.test(from) || !/^0x[0-9a-f]{40}$/.test(to)) {
+      throw new Error("Unexpected x402 transfer address.");
+    }
+    const timestamp = sqlResultTimestamp(row.block_timestamp);
+    const logIndex = numericResult(row.log_index, "x402 log index");
+    return {
+      transactionHash,
+      from,
+      to,
+      amountRaw: BigInt(String(row.amount ?? "0")),
+      logIndex,
+      timestamp,
+      activityDate: timestamp.slice(0, 10),
+    };
+  });
+}
+
+export function collapseX402TransferChains(transfers) {
+  if (!Array.isArray(transfers)) throw new Error("x402 transfers must be an array.");
+  const byTransaction = new Map();
+  for (const transfer of transfers) {
+    const legs = byTransaction.get(transfer.transactionHash) ?? [];
+    legs.push(transfer);
+    byTransaction.set(transfer.transactionHash, legs);
+  }
+
+  const collapsed = [];
+  for (const legs of byTransaction.values()) {
+    const sorted = [...legs].sort((left, right) => left.logIndex - right.logIndex);
+    const position = new Map(sorted.map((leg, index) => [leg, index]));
+    const firstReceived = new Map();
+    const lastSent = new Map();
+    sorted.forEach((leg, index) => {
+      if (!firstReceived.has(leg.to)) firstReceived.set(leg.to, index);
+      lastSent.set(leg.from, index);
+    });
+    const isPassThrough = (address) => {
+      const received = firstReceived.get(address);
+      const sent = lastSent.get(address);
+      return received !== undefined && sent !== undefined && received < sent;
+    };
+    const consumed = new Set();
+
+    for (const origin of sorted) {
+      if (consumed.has(origin) || isPassThrough(origin.from)) continue;
+      consumed.add(origin);
+      let rawLegCount = 1;
+      let terminal = origin;
+      while (isPassThrough(terminal.to)) {
+        const candidates = sorted.filter(
+          (leg) =>
+            !consumed.has(leg) &&
+            leg.from === terminal.to &&
+            position.get(leg) > position.get(terminal),
+        );
+        if (candidates.length === 0) break;
+        const target = terminal.amountRaw;
+        const next = candidates.reduce((best, leg) => {
+          const bestDistance = best.amountRaw > target ? best.amountRaw - target : target - best.amountRaw;
+          const legDistance = leg.amountRaw > target ? leg.amountRaw - target : target - leg.amountRaw;
+          return legDistance < bestDistance ? leg : best;
+        });
+        consumed.add(next);
+        rawLegCount += 1;
+        terminal = next;
+      }
+      collapsed.push(
+        terminal === origin
+          ? { ...origin, recipientAmountRaw: origin.amountRaw, rawLegCount }
+          : {
+              ...origin,
+              to: terminal.to,
+              recipientAmountRaw: terminal.amountRaw,
+              rawLegCount,
+            },
+      );
+    }
+  }
+  return collapsed;
+}
+
+export function x402TerminalIdentityActivities(transfers) {
+  const payments = collapseX402TransferChains(normalizeX402MultiLegRows(transfers));
+  const activities = new Map();
+  const add = (payment, role, identity, amountRaw) => {
+    const activityMonth = payment.activityDate.slice(0, 7);
+    const identityHash = sha256Hex(`x402|base|evm|${identity}`);
+    const key = [role, identityHash, activityMonth].join("|");
+    const current = activities.get(key) ?? {
+      role,
+      identityScheme: "evm",
+      identityHash,
+      activityMonth,
+      transactionCount: 0,
+      volumeRaw: 0n,
+      firstSeenAt: payment.timestamp,
+      lastSeenAt: payment.timestamp,
+      evidenceLevel: "deterministic",
+    };
+    current.transactionCount += 1;
+    current.volumeRaw += amountRaw;
+    if (payment.timestamp < current.firstSeenAt) current.firstSeenAt = payment.timestamp;
+    if (payment.timestamp > current.lastSeenAt) current.lastSeenAt = payment.timestamp;
+    activities.set(key, current);
+  };
+  for (const payment of payments) {
+    add(payment, "payer", payment.from, payment.amountRaw);
+    add(payment, "payee", payment.to, payment.recipientAmountRaw);
+  }
+  return [...activities.values()]
+    .map(({ volumeRaw, ...activity }) => ({
+      ...activity,
+      volumeUsdMicros: safeNumber(volumeRaw, "x402 terminal identity USD volume"),
+    }))
+    .sort((left, right) =>
+      [left.activityMonth, left.role, left.identityHash]
+        .join("|")
+        .localeCompare([right.activityMonth, right.role, right.identityHash].join("|")),
+    );
+}
+
+export function aggregateX402TerminalPayments({ singleRows, multiLegRows, from, to }) {
+  if (!(from instanceof Date) || !(to instanceof Date) || to <= from) {
+    throw new Error("A valid x402 aggregation range is required.");
+  }
+  const byDate = new Map();
+  const windowBuyers = new Set();
+  const windowSellers = new Set();
+  let windowTransactionCount = 0;
+  let windowPaymentVolumeRaw = 0n;
+  let windowRecipientVolumeRaw = 0n;
+  let windowGrossVolumeRaw = 0n;
+  let windowRawTransferCount = 0;
+
+  const day = (activityDate) => {
+    const value = byDate.get(activityDate) ?? {
+      activityDate,
+      transactionCount: 0,
+      rawTransferCount: 0,
+      paymentVolumeRaw: 0n,
+      recipientVolumeRaw: 0n,
+      grossVolumeRaw: 0n,
+      buyers: new Set(),
+      sellers: new Set(),
+    };
+    byDate.set(activityDate, value);
+    return value;
+  };
+
+  for (const row of singleRows) {
+    const activityDate = String(row.activity_date ?? "");
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(activityDate)) {
+      throw new Error(`Unexpected CDP activity date: ${activityDate}`);
+    }
+    const current = day(activityDate);
+    const count = numericResult(row.transaction_count, "x402 single-leg transaction count");
+    const volume = BigInt(String(row.volume_raw ?? "0"));
+    const buyers = normalizeAddressArray(row.buyer_addresses, "x402 buyer");
+    const sellers = normalizeAddressArray(row.seller_addresses, "x402 seller");
+    current.transactionCount += count;
+    current.rawTransferCount += numericResult(row.transfer_count, "x402 single-leg transfer count");
+    current.paymentVolumeRaw += volume;
+    current.recipientVolumeRaw += volume;
+    current.grossVolumeRaw += volume;
+    for (const buyer of buyers) {
+      current.buyers.add(buyer);
+      windowBuyers.add(buyer);
+    }
+    for (const seller of sellers) {
+      current.sellers.add(seller);
+      windowSellers.add(seller);
+    }
+    windowTransactionCount += count;
+    windowPaymentVolumeRaw += volume;
+    windowRecipientVolumeRaw += volume;
+    windowGrossVolumeRaw += volume;
+    windowRawTransferCount += count;
+  }
+
+  const normalizedMulti = normalizeX402MultiLegRows(multiLegRows);
+  const collapsed = collapseX402TransferChains(normalizedMulti);
+  for (const leg of normalizedMulti) {
+    const current = day(leg.activityDate);
+    current.rawTransferCount += 1;
+    current.grossVolumeRaw += leg.amountRaw;
+    windowRawTransferCount += 1;
+    windowGrossVolumeRaw += leg.amountRaw;
+  }
+  for (const payment of collapsed) {
+    const current = day(payment.activityDate);
+    current.transactionCount += 1;
+    current.paymentVolumeRaw += payment.amountRaw;
+    current.recipientVolumeRaw += payment.recipientAmountRaw;
+    current.buyers.add(payment.from);
+    current.sellers.add(payment.to);
+    windowBuyers.add(payment.from);
+    windowSellers.add(payment.to);
+    windowTransactionCount += 1;
+    windowPaymentVolumeRaw += payment.amountRaw;
+    windowRecipientVolumeRaw += payment.recipientAmountRaw;
+  }
+
+  const limitation =
+    "Base USDC settlements submitted by the versioned public facilitator registry. Each receive-then-forward proxy chain counts once at the payer's original amount and is attributed to the terminal recipient using ordered transfer logs. Terminal recipient net value and gross transfer movement are retained separately. Testing, self-payment, unresolved ownership, non-Base, and non-USDC activity remain unadjusted.";
+  const metrics = [...byDate.values()]
+    .map((value) => ({
+      activityDate: value.activityDate,
+      measurementUnit: "onchain_settlement",
+      transactionCount: value.transactionCount,
+      settlementCount: value.transactionCount,
+      rawTransferCount: value.rawTransferCount,
+      volumeUsdMicros: safeNumber(value.paymentVolumeRaw, "x402 terminal payment USD volume"),
+      recipientVolumeUsdMicros: safeNumber(
+        value.recipientVolumeRaw,
+        "x402 terminal recipient USD volume",
+      ),
+      grossVolumeUsdMicros: safeNumber(value.grossVolumeRaw, "x402 gross transfer USD volume"),
+      buyerCount: value.buyers.size,
+      sellerCount: value.sellers.size,
+      evidenceLevel: "deterministic",
+      isAdjusted: false,
+      limitation,
+    }))
+    .sort((left, right) => left.activityDate.localeCompare(right.activityDate));
+
+  return {
+    metrics,
+    windowSummary: {
+      rangeStart: from.toISOString(),
+      rangeEnd: to.toISOString(),
+      measurementUnit: "onchain_settlement",
+      transactionCount: windowTransactionCount,
+      settlementCount: windowTransactionCount,
+      rawTransferCount: windowRawTransferCount,
+      volumeUsdMicros: safeNumber(windowPaymentVolumeRaw, "x402 terminal payment window USD volume"),
+      recipientVolumeUsdMicros: safeNumber(
+        windowRecipientVolumeRaw,
+        "x402 terminal recipient window USD volume",
+      ),
+      grossVolumeUsdMicros: safeNumber(windowGrossVolumeRaw, "x402 gross transfer window USD volume"),
+      buyerCount: windowBuyers.size,
+      sellerCount: windowSellers.size,
+      evidenceLevel: "deterministic",
+      isAdjusted: false,
+      limitation,
+    },
+  };
 }
 
 export function normalizeX402DailyRows(rows) {
@@ -399,9 +930,12 @@ export function fillDailyMetricRange(from, to, metrics, template) {
         activityDate: date,
         transactionCount: 0,
         settlementCount: 0,
+        rawTransferCount: 0,
         chargeCount: 0,
         sessionCount: 0,
         volumeUsdMicros: 0,
+        recipientVolumeUsdMicros: 0,
+        grossVolumeUsdMicros: 0,
         chargeVolumeUsdMicros: 0,
         sessionVolumeUsdMicros: 0,
         buyerCount: 0,
@@ -432,4 +966,12 @@ function safeNumber(value, field) {
 
 function formatSqlTimestamp(date) {
   return date.toISOString().replace("T", " ").replace("Z", "");
+}
+
+function sqlResultTimestamp(value) {
+  if (typeof value !== "string" || !value.trim()) throw new Error("SQL timestamp is missing.");
+  const normalized = value.includes("T") ? value : `${value.replace(" ", "T")}Z`;
+  const timestamp = new Date(normalized);
+  if (!Number.isFinite(timestamp.getTime())) throw new Error(`Unexpected SQL timestamp: ${value}`);
+  return timestamp.toISOString();
 }

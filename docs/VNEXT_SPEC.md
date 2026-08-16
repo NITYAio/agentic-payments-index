@@ -36,7 +36,7 @@ The public headline remains **“The machine economy, made legible.”** “Agen
 
 - **Transactions:** records matching the protocol-specific direct-source method in the selected window.
 - **MPP payment value:** value of current-version MPP charges and settled sessions.
-- **x402 raw USDC transfer value:** value of facilitator-associated Base transfers; pass-through activity may be included.
+- **x402 payment value:** payer-originated USDC value counted once per reconstructed payment; receive-and-forward chains resolve to the terminal recipient. Recipient net value and gross transfer movement remain auditable.
 - **Average value:** protocol-specific value divided by qualifying records. No combined MPP + x402 average is calculated.
 - **Average daily transactions:** qualifying records divided by the exact rolling-window length. All-time remains disabled until backfill.
 - **Active payer addresses:** distinct network-normalized payer addresses observed in the selected window. This is not a count of people or autonomous agents. One actor can use several addresses; several actors can share an address; combined protocol counts may overlap.
@@ -153,7 +153,7 @@ disabled until its independent backfill is complete.
 MPP and x402 remain the only combined totals until another source exposes a comparable successful-payment event, settlement value, time window, identity definition, and deduplication rule. Virtuals ACP, AP2, UCP, Nevermined, and Skyfire are tracked separately by sector role and disclosure state. The product does not create an “Other” total by mixing payments, settlements, mandates, checkouts, and agent jobs.
 
 The x402 cards and charts use the independent Base observation. It is labelled
-facilitator-associated activity and raw USDC transfer value because the current
+facilitator-associated payment activity because the current
 method cannot prove that every matched transfer is one end-user payment.
 
 ## Cost and operations

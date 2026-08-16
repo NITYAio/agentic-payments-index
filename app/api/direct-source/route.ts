@@ -10,7 +10,10 @@ type MetricRow = {
   charge_count: number;
   session_count: number;
   settlement_count: number;
+  raw_transfer_count: number;
   volume_usd_micros: number;
+  recipient_volume_usd_micros: number;
+  gross_volume_usd_micros: number;
   charge_volume_usd_micros: number;
   session_volume_usd_micros: number;
   buyer_count: number;
@@ -48,7 +51,10 @@ type WindowMetricRow = {
   charge_count: number;
   session_count: number;
   settlement_count: number;
+  raw_transfer_count: number;
   volume_usd_micros: number;
+  recipient_volume_usd_micros: number;
+  gross_volume_usd_micros: number;
   charge_volume_usd_micros: number;
   session_volume_usd_micros: number;
   buyer_count: number;
@@ -66,8 +72,8 @@ function requestOptions(request: Request) {
     throw new Error("Protocol must be all, mpp, or x402.");
   }
   const days = Number.parseInt(url.searchParams.get("days") ?? "30", 10);
-  if (!Number.isSafeInteger(days) || days < 1 || days > 366) {
-    throw new Error("Days must be an integer between 1 and 366.");
+  if (!Number.isSafeInteger(days) || days < 0 || days > 366) {
+    throw new Error("Days must be 0 for all available history, or an integer between 1 and 366.");
   }
   return { selected, days };
 }
@@ -87,23 +93,21 @@ export async function GET(request: Request) {
     );
     const windowQuery = d1.prepare(
       `SELECT run_id, protocol, network, range_start, range_end, measurement_unit,
-              transaction_count, charge_count, session_count, settlement_count,
-              volume_usd_micros, charge_volume_usd_micros, session_volume_usd_micros,
+              transaction_count, charge_count, session_count, settlement_count, raw_transfer_count,
+              volume_usd_micros, recipient_volume_usd_micros, gross_volume_usd_micros,
+              charge_volume_usd_micros, session_volume_usd_micros,
               buyer_count, seller_count, evidence_level, is_adjusted,
               limitation, updated_at
        FROM protocol_window_metrics
-       WHERE range_end >= ?${protocolClause}
+       WHERE 1 = 1${protocolClause}
        ORDER BY range_end DESC, protocol ASC, network ASC`,
     );
     const coverageStatement =
       selected === "all" ? coverageQuery : coverageQuery.bind(selected);
-    const earliestWindow = new Date();
-    earliestWindow.setUTCDate(earliestWindow.getUTCDate() - 367);
-    const earliestWindowIso = earliestWindow.toISOString();
     const windowStatement =
       selected === "all"
-        ? windowQuery.bind(earliestWindowIso)
-        : windowQuery.bind(earliestWindowIso, selected);
+        ? windowQuery
+        : windowQuery.bind(selected);
     const [coverageResult, windowResult] = await Promise.all([
       coverageStatement.all<CoverageRow>(),
       windowStatement.all<WindowMetricRow>(),
@@ -124,12 +128,30 @@ export async function GET(request: Request) {
       updatedAt: row.updated_at,
     }));
     const requestedWindowMs = days * 86_400_000;
+    const coverageByProtocol = new Map(
+      coverage.map((row) => [
+        `${row.protocol}|${row.network}|${row.measurementUnit}`,
+        row,
+      ]),
+    );
     const seenProtocols = new Set<string>();
     const windowMetrics = windowResult.results
       .filter(
-        (row) =>
-          new Date(row.range_end).getTime() - new Date(row.range_start).getTime() ===
-          requestedWindowMs,
+        (row) => {
+          if (days !== 0) {
+            return (
+              new Date(row.range_end).getTime() - new Date(row.range_start).getTime() ===
+              requestedWindowMs
+            );
+          }
+          const range = coverageByProtocol.get(
+            `${row.protocol}|${row.network}|${row.measurement_unit}`,
+          );
+          return Boolean(
+            range?.coverageStart === row.range_start &&
+            range?.coverageEnd === row.range_end,
+          );
+        },
       )
       .filter((row) => {
         const key = `${row.protocol}|${row.network}|${row.measurement_unit}`;
@@ -148,7 +170,10 @@ export async function GET(request: Request) {
         chargeCount: row.charge_count,
         sessionCount: row.session_count,
         settlementCount: row.settlement_count,
+        rawTransferCount: row.raw_transfer_count,
         volumeUsd: row.volume_usd_micros / 1_000_000,
+        recipientVolumeUsd: row.recipient_volume_usd_micros / 1_000_000,
+        grossTransferVolumeUsd: row.gross_volume_usd_micros / 1_000_000,
         chargeVolumeUsd: row.charge_volume_usd_micros / 1_000_000,
         sessionVolumeUsd: row.session_volume_usd_micros / 1_000_000,
         buyerCount: row.buyer_count,
@@ -164,7 +189,8 @@ export async function GET(request: Request) {
           .prepare(
             `SELECT run_id, protocol, network, activity_date, measurement_unit,
                     transaction_count, charge_count, session_count, settlement_count,
-                    volume_usd_micros, charge_volume_usd_micros,
+                    raw_transfer_count, volume_usd_micros, recipient_volume_usd_micros,
+                    gross_volume_usd_micros, charge_volume_usd_micros,
                     session_volume_usd_micros, buyer_count, seller_count,
                     evidence_level, is_adjusted, limitation, updated_at
              FROM daily_protocol_metrics
@@ -184,7 +210,10 @@ export async function GET(request: Request) {
       chargeCount: row.charge_count,
       sessionCount: row.session_count,
       settlementCount: row.settlement_count,
+      rawTransferCount: row.raw_transfer_count,
       volumeUsd: row.volume_usd_micros / 1_000_000,
+      recipientVolumeUsd: row.recipient_volume_usd_micros / 1_000_000,
+      grossTransferVolumeUsd: row.gross_volume_usd_micros / 1_000_000,
       chargeVolumeUsd: row.charge_volume_usd_micros / 1_000_000,
       sessionVolumeUsd: row.session_volume_usd_micros / 1_000_000,
       buyerCount: row.buyer_count,

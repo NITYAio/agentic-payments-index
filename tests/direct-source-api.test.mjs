@@ -70,6 +70,20 @@ test("direct-source migration, ingestion, idempotency, and 30-day read work end 
         rangeStart: payload.windowSummary.rangeStart,
         rangeEnd: payload.windowSummary.rangeEnd,
       };
+      if (protocol === "x402") {
+        requestBody.metrics = payload.metrics.map((metric) => ({
+          ...metric,
+          rawTransferCount: metric.transactionCount + 10,
+          recipientVolumeUsdMicros: metric.volumeUsdMicros - 1_000_000,
+          grossVolumeUsdMicros: metric.volumeUsdMicros + 2_000_000,
+        }));
+        requestBody.windowSummary = {
+          ...payload.windowSummary,
+          rawTransferCount: payload.windowSummary.transactionCount + 300,
+          recipientVolumeUsdMicros: payload.windowSummary.volumeUsdMicros - 30_000_000,
+          grossVolumeUsdMicros: payload.windowSummary.volumeUsdMicros + 60_000_000,
+        };
+      }
       const request = () =>
         new Request("http://localhost/api/internal/direct-source-ingest", {
           method: "POST",
@@ -108,6 +122,9 @@ test("direct-source migration, ingestion, idempotency, and 30-day read work end 
     const mpp = body.windowMetrics.find((metric) => metric.protocol === "mpp");
     assert.equal(x402.buyerCount, 15_742);
     assert.equal(x402.sellerCount, 73_534);
+    assert.equal(x402.rawTransferCount, x402.transactionCount + 300);
+    assert.equal(x402.recipientVolumeUsd, x402.volumeUsd - 30);
+    assert.equal(x402.grossTransferVolumeUsd, x402.volumeUsd + 60);
     assert.equal(mpp.buyerCount, 43_831);
     assert.equal(mpp.sellerCount, 15_618);
     assert.match(body.disclosure, /daily identity counts.*never summed/i);

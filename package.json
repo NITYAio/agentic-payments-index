@@ -13,6 +13,9 @@
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
     "identity:ingest": "node scripts/ingest-identity-segment.mjs",
+    "identity:collect": "node --env-file-if-exists=.env.local scripts/collect-identity-history.mjs",
+    "cohort:snapshot": "node --env-file-if-exists=.env.local scripts/build-cohort-snapshots.mjs",
+    "direct:merge-history": "node scripts/merge-direct-source-history.mjs",
     "direct:collect": "node --env-file-if-exists=.env.local scripts/collect-direct-source.mjs",
     "direct:registry": "node scripts/sync-x402-facilitators.mjs"
   },

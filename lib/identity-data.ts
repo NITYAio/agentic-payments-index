@@ -43,6 +43,11 @@ export type MonthlyActivityRecord = {
   evidenceLevel: EvidenceLevel;
 };
 
+export type PrehashedMonthlyActivity = Omit<
+  MonthlyActivityRecord,
+  "id" | "segmentId" | "protocol" | "network"
+>;
+
 const EVM_ADDRESS = /^0x[0-9a-fA-F]{40}$/;
 
 function normalizedIdentity(identity: PaymentIdentity) {
@@ -66,6 +71,9 @@ async function sha256(value: string) {
     .join("");
 }
 
+const SHA256_HEX = /^[0-9a-f]{64}$/;
+const MONTH = /^\d{4}-(0[1-9]|1[0-2])$/;
+
 function monthForTimestamp(timestamp: string) {
   const date = new Date(timestamp);
   if (!Number.isFinite(date.getTime())) throw new Error("Event timestamp is invalid.");
@@ -86,6 +94,92 @@ function strictMicros(value: number | undefined) {
     throw new Error("USD volume must be a non-negative integer number of micros.");
   }
   return micros;
+}
+
+function strictTimestamp(value: unknown, field: string) {
+  if (typeof value !== "string") throw new Error(`${field} is required.`);
+  const timestamp = new Date(value);
+  if (!Number.isFinite(timestamp.getTime()) || timestamp.getTime() > Date.now() + 86_400_000) {
+    throw new Error(`${field} is invalid.`);
+  }
+  return timestamp.toISOString();
+}
+
+export function validatePrehashedMonthlyActivity(value: unknown): PrehashedMonthlyActivity {
+  if (!value || typeof value !== "object") throw new Error("Activity must be an object.");
+  const activity = value as Partial<PrehashedMonthlyActivity>;
+  if (activity.role !== "payer" && activity.role !== "payee") {
+    throw new Error("Activity role must be payer or payee.");
+  }
+  if (
+    typeof activity.identityScheme !== "string" ||
+    !activity.identityScheme.trim() ||
+    activity.identityScheme.length > 100
+  ) {
+    throw new Error("Activity identity scheme is invalid.");
+  }
+  if (typeof activity.identityHash !== "string" || !SHA256_HEX.test(activity.identityHash)) {
+    throw new Error("Activity identity hash must be a lowercase SHA-256 value.");
+  }
+  if (typeof activity.activityMonth !== "string" || !MONTH.test(activity.activityMonth)) {
+    throw new Error("Activity month must use YYYY-MM.");
+  }
+  const firstSeenAt = strictTimestamp(activity.firstSeenAt, "Activity firstSeenAt");
+  const lastSeenAt = strictTimestamp(activity.lastSeenAt, "Activity lastSeenAt");
+  if (lastSeenAt < firstSeenAt) throw new Error("Activity lastSeenAt precedes firstSeenAt.");
+  if (
+    firstSeenAt.slice(0, 7) !== activity.activityMonth ||
+    lastSeenAt.slice(0, 7) !== activity.activityMonth
+  ) {
+    throw new Error("Activity timestamps must fall within activityMonth.");
+  }
+  if (
+    activity.evidenceLevel !== "verified" &&
+    activity.evidenceLevel !== "deterministic" &&
+    activity.evidenceLevel !== "declared" &&
+    activity.evidenceLevel !== "inferred"
+  ) {
+    throw new Error("Activity evidence level is invalid.");
+  }
+  return {
+    role: activity.role,
+    identityScheme: activity.identityScheme.trim().toLowerCase(),
+    identityHash: activity.identityHash,
+    activityMonth: activity.activityMonth,
+    transactionCount: strictCount(activity.transactionCount),
+    volumeUsdMicros: strictMicros(activity.volumeUsdMicros),
+    firstSeenAt,
+    lastSeenAt,
+    evidenceLevel: activity.evidenceLevel,
+  };
+}
+
+export async function finalizePrehashedMonthlyActivity(
+  segmentId: string,
+  protocol: PaymentProtocol,
+  network: string,
+  activities: PrehashedMonthlyActivity[],
+) {
+  const normalizedNetwork = network.trim().toLowerCase();
+  return Promise.all(
+    activities.map(async (activity) => ({
+      id: await sha256(
+        [
+          segmentId,
+          activity.role,
+          protocol,
+          normalizedNetwork,
+          activity.identityHash,
+          activity.activityMonth,
+          activity.evidenceLevel,
+        ].join("|"),
+      ),
+      segmentId,
+      protocol,
+      network: normalizedNetwork,
+      ...activity,
+    } satisfies MonthlyActivityRecord)),
+  );
 }
 
 export async function aggregateIdentityActivity(

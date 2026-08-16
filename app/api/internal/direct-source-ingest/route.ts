@@ -12,7 +12,10 @@ type MetricInput = {
   chargeCount?: unknown;
   sessionCount?: unknown;
   settlementCount?: unknown;
+  rawTransferCount?: unknown;
   volumeUsdMicros?: unknown;
+  recipientVolumeUsdMicros?: unknown;
+  grossVolumeUsdMicros?: unknown;
   chargeVolumeUsdMicros?: unknown;
   sessionVolumeUsdMicros?: unknown;
   buyerCount?: unknown;
@@ -166,7 +169,16 @@ function parseMetric(value: unknown) {
     chargeCount: optionalCount(metric.chargeCount, "Charge count"),
     sessionCount: optionalCount(metric.sessionCount, "Session count"),
     settlementCount: count(metric.settlementCount, "Settlement count"),
+    rawTransferCount: optionalCount(metric.rawTransferCount, "Raw transfer count"),
     volumeUsdMicros: count(metric.volumeUsdMicros, "USD volume micros"),
+    recipientVolumeUsdMicros:
+      metric.recipientVolumeUsdMicros === undefined || metric.recipientVolumeUsdMicros === null
+        ? count(metric.volumeUsdMicros, "USD volume micros")
+        : count(metric.recipientVolumeUsdMicros, "Recipient USD volume micros"),
+    grossVolumeUsdMicros:
+      metric.grossVolumeUsdMicros === undefined || metric.grossVolumeUsdMicros === null
+        ? count(metric.volumeUsdMicros, "USD volume micros")
+        : count(metric.grossVolumeUsdMicros, "Gross USD volume micros"),
     chargeVolumeUsdMicros: optionalCount(
       metric.chargeVolumeUsdMicros,
       "Charge USD volume micros",
@@ -198,7 +210,10 @@ function parseWindowMetric(value: unknown) {
     chargeCount: parsed.chargeCount,
     sessionCount: parsed.sessionCount,
     settlementCount: parsed.settlementCount,
+    rawTransferCount: parsed.rawTransferCount,
     volumeUsdMicros: parsed.volumeUsdMicros,
+    recipientVolumeUsdMicros: parsed.recipientVolumeUsdMicros,
+    grossVolumeUsdMicros: parsed.grossVolumeUsdMicros,
     chargeVolumeUsdMicros: parsed.chargeVolumeUsdMicros,
     sessionVolumeUsdMicros: parsed.sessionVolumeUsdMicros,
     buyerCount: parsed.buyerCount,
@@ -393,18 +408,22 @@ export async function POST(request: Request) {
             .prepare(
               `INSERT INTO daily_protocol_metrics
                (id, run_id, source_key, protocol, network, activity_date, measurement_unit,
-                transaction_count, charge_count, session_count, settlement_count,
-                volume_usd_micros, charge_volume_usd_micros, session_volume_usd_micros,
+                transaction_count, charge_count, session_count, settlement_count, raw_transfer_count,
+                volume_usd_micros, recipient_volume_usd_micros, gross_volume_usd_micros,
+                charge_volume_usd_micros, session_volume_usd_micros,
                 buyer_count, seller_count, evidence_level, is_adjusted, limitation,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(run_id, activity_date, measurement_unit)
                DO UPDATE SET run_id = excluded.run_id,
                  transaction_count = excluded.transaction_count,
                  charge_count = excluded.charge_count,
                  session_count = excluded.session_count,
                  settlement_count = excluded.settlement_count,
+                 raw_transfer_count = excluded.raw_transfer_count,
                  volume_usd_micros = excluded.volume_usd_micros,
+                 recipient_volume_usd_micros = excluded.recipient_volume_usd_micros,
+                 gross_volume_usd_micros = excluded.gross_volume_usd_micros,
                  charge_volume_usd_micros = excluded.charge_volume_usd_micros,
                  session_volume_usd_micros = excluded.session_volume_usd_micros,
                  buyer_count = excluded.buyer_count,
@@ -426,7 +445,10 @@ export async function POST(request: Request) {
               metric.chargeCount,
               metric.sessionCount,
               metric.settlementCount,
+              metric.rawTransferCount,
               metric.volumeUsdMicros,
+              metric.recipientVolumeUsdMicros,
+              metric.grossVolumeUsdMicros,
               metric.chargeVolumeUsdMicros,
               metric.sessionVolumeUsdMicros,
               metric.buyerCount,
@@ -457,17 +479,21 @@ export async function POST(request: Request) {
         `INSERT INTO protocol_window_metrics
          (id, run_id, source_key, protocol, network, range_start, range_end,
           measurement_unit, transaction_count, charge_count, session_count,
-          settlement_count, volume_usd_micros, charge_volume_usd_micros,
+          settlement_count, raw_transfer_count, volume_usd_micros,
+          recipient_volume_usd_micros, gross_volume_usd_micros, charge_volume_usd_micros,
           session_volume_usd_micros, buyer_count, seller_count, evidence_level,
           is_adjusted, limitation, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(source_key, protocol, network, range_start, range_end, measurement_unit)
          DO UPDATE SET run_id = excluded.run_id,
            transaction_count = excluded.transaction_count,
            charge_count = excluded.charge_count,
            session_count = excluded.session_count,
            settlement_count = excluded.settlement_count,
+           raw_transfer_count = excluded.raw_transfer_count,
            volume_usd_micros = excluded.volume_usd_micros,
+           recipient_volume_usd_micros = excluded.recipient_volume_usd_micros,
+           gross_volume_usd_micros = excluded.gross_volume_usd_micros,
            charge_volume_usd_micros = excluded.charge_volume_usd_micros,
            session_volume_usd_micros = excluded.session_volume_usd_micros,
            buyer_count = excluded.buyer_count,
@@ -490,7 +516,10 @@ export async function POST(request: Request) {
         windowSummary.chargeCount,
         windowSummary.sessionCount,
         windowSummary.settlementCount,
+        windowSummary.rawTransferCount,
         windowSummary.volumeUsdMicros,
+        windowSummary.recipientVolumeUsdMicros,
+        windowSummary.grossVolumeUsdMicros,
         windowSummary.chargeVolumeUsdMicros,
         windowSummary.sessionVolumeUsdMicros,
         windowSummary.buyerCount,
@@ -516,10 +545,24 @@ export async function POST(request: Request) {
          ON CONFLICT(source_key, protocol, network, measurement_unit)
          DO UPDATE SET source_type = excluded.source_type,
            source_url = excluded.source_url,
-           coverage_start = excluded.coverage_start,
-           coverage_end = excluded.coverage_end,
+           coverage_start = CASE
+             WHEN source_coverage.coverage_start IS NULL THEN excluded.coverage_start
+             WHEN excluded.coverage_start IS NULL THEN source_coverage.coverage_start
+             WHEN excluded.coverage_start < source_coverage.coverage_start THEN excluded.coverage_start
+             ELSE source_coverage.coverage_start
+           END,
+           coverage_end = CASE
+             WHEN source_coverage.coverage_end IS NULL THEN excluded.coverage_end
+             WHEN excluded.coverage_end IS NULL THEN source_coverage.coverage_end
+             WHEN excluded.coverage_end > source_coverage.coverage_end THEN excluded.coverage_end
+             ELSE source_coverage.coverage_end
+           END,
            last_successful_sync_at = excluded.last_successful_sync_at,
-           status = excluded.status,
+           status = CASE
+             WHEN source_coverage.coverage_end IS NULL OR excluded.coverage_end >= source_coverage.coverage_end
+               THEN excluded.status
+             ELSE source_coverage.status
+           END,
            limitation = excluded.limitation,
            methodology_url = excluded.methodology_url,
            updated_at = excluded.updated_at`,

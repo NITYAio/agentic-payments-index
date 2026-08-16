@@ -42,11 +42,12 @@ activity. Adjustment is not yet applied to the production totals.
 | MPP | Tempo direct chain evidence | MPPScan resolved server origins |
 | x402 | Base USDC direct chain evidence + versioned facilitator registry | x402scan Bazaar origins |
 
-The public-beta homepage uses primary settlement evidence for exact rolling
+The public-beta homepage uses primary payment evidence for exact rolling
 24-hour, 7-day, and 30-day windows:
 
 - x402: Base USDC event data from Coinbase CDP SQL, filtered to a versioned,
-  open facilitator-address registry;
+  open facilitator-address registry. Ordered receive-and-forward chains count
+  once at the payer-originated amount and resolve to the final recipient;
 - MPP: current-version Tempo charges carrying valid official MPP memos for
   pathUSD and USDC.e, plus settled TIP-1034 session events.
 
@@ -70,9 +71,10 @@ recipient count is resolved-service count.
 ## Combined views
 
 Transaction counts can be shown together as protocol-level observed activity.
-MPP identified payment value and x402 raw facilitator-associated USDC transfer
-value are not summed because they are different measurement units. Sender and
-recipient counts are protocol-level sums and can contain overlap.
+MPP and x402 payment values are shown separately because they cover different
+protocols and networks. x402 gross transfer movement is retained as an audit
+field and is never substituted for payment value. Sender and recipient counts
+are protocol-level sums and can contain overlap.
 
 Combined service totals are the sum of resolved MPP origins and regrouped x402
 origins. A service indexed on both protocols may appear twice. The total is

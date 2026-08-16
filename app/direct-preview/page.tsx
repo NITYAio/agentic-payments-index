@@ -11,7 +11,10 @@ type DailyMetric = {
   transactionCount: number;
   chargeCount: number;
   sessionCount: number;
+  rawTransferCount: number;
   volumeUsd: number;
+  recipientVolumeUsd: number;
+  grossTransferVolumeUsd: number;
   chargeVolumeUsd: number;
   sessionVolumeUsd: number;
   buyerCount: number;
@@ -170,8 +173,8 @@ export default function DirectPreview() {
         <div className="directPreviewIntro">
           <p>
             Exact rolling-window comparisons of independently collected MPP and
-            x402 activity. Values remain unadjusted and incompatible measurement
-            units are deliberately not combined.
+            x402 activity. Payment value is counted once at the payer&apos;s original
+            amount; recipient value and gross transfer movement remain available for audit.
           </p>
           <span>All boundaries and dates use UTC.</span>
         </div>
@@ -213,14 +216,14 @@ export default function DirectPreview() {
               const metric = data.windowMetrics.find((item) => item.protocol === protocol);
               const coverage = data.coverage.find((item) => item.protocol === protocol);
               if (!metric) return null;
-              const valueLabel = protocol === "x402" ? "Raw USDC transfer value" : "Payment value";
+              const valueLabel = "Payment value";
               const sellerLabel = protocol === "mpp" ? "Active server identities" : "Recipient addresses";
               return (
                 <article className={`directProtocolCard ${protocol}`} key={protocol}>
                   <div className="directProtocolHead">
                     <div>
                       <span>{protocolName(protocol)} · {metric.network}</span>
-                      <h2>{protocol === "mpp" ? "Protocol payments" : "Onchain settlements"}</h2>
+                      <h2>Payments</h2>
                     </div>
                     <span className="directStatus"><i /> deterministic</span>
                   </div>
@@ -237,7 +240,12 @@ export default function DirectPreview() {
                       <div><small>One-shot charges</small><strong>{compact(metric.chargeCount)}</strong><span>{dollars(metric.chargeVolumeUsd)}</span></div>
                       <div><small>Session settlements</small><strong>{compact(metric.sessionCount)}</strong><span>{dollars(metric.sessionVolumeUsd)}</span></div>
                     </div>
-                  ) : null}
+                  ) : (
+                    <div className="directMppBreakdown" aria-label="x402 transfer audit">
+                      <div><small>Final recipients received</small><strong>{dollars(metric.recipientVolumeUsd)}</strong><span>after routing</span></div>
+                      <div><small>Gross transfer movement</small><strong>{dollars(metric.grossTransferVolumeUsd)}</strong><span>{compact(metric.rawTransferCount)} raw legs</span></div>
+                    </div>
+                  )}
 
                   <DailyBars metrics={grouped[protocol]} />
 
@@ -245,7 +253,7 @@ export default function DirectPreview() {
                     <div><dt>Window</dt><dd>{timestamp(metric.rangeStart)}–{timestamp(metric.rangeEnd)}</dd></div>
                     <div><dt>Unit</dt><dd>{metric.measurementUnit.replaceAll("_", " ")}</dd></div>
                     <div><dt>Source</dt><dd>{coverage?.sourceType.replaceAll("_", " ") ?? "—"}</dd></div>
-                    <div><dt>Adjustment</dt><dd>{metric.adjusted ? "Adjusted" : "Raw / unadjusted"}</dd></div>
+                    <div><dt>Quality filters</dt><dd>{metric.adjusted ? "Applied" : "Not yet applied"}</dd></div>
                   </dl>
                   <p className="directLimitation">{metric.limitation}</p>
                 </article>
@@ -265,9 +273,9 @@ export default function DirectPreview() {
               <p>One-shot charges and TIP-1034 settlements remain queryable separately and combine into the defensible MPP payment total.</p>
             </article>
             <article>
-              <span>Hold from combined GDP</span>
-              <strong>x402 raw transfer value</strong>
-              <p>Proxy and pass-through transactions can include multiple USDC transfer legs. No silent leg-selection heuristic is applied.</p>
+              <span>Transfer routing normalized</span>
+              <strong>x402 payment value</strong>
+              <p>Receive-and-forward chains count once at the payer&apos;s original amount and are attributed to the final recipient. Gross movement remains visible for audit.</p>
             </article>
             <article>
               <span>Identity definition</span>
