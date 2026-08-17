@@ -3261,25 +3261,38 @@ footer > span {
     letter-spacing: 0.11em;
   }
 
+  .status {
+    min-width: 0;
+    max-width: 122px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+
   .protocolStrip {
     top: 64px;
+    gap: 8px;
     padding: 9px 20px;
   }
 
   .protocolTabs {
     display: flex;
-    flex: 1;
-    width: auto;
+    flex: 1 1 0;
+    min-width: 0;
+    width: 0;
   }
 
   .protocolTabs button {
     flex: 1;
     min-width: 0;
+    padding-inline: 7px;
   }
 
   .protocolSubmit {
+    flex: 0 1 auto;
     padding-inline: 9px;
     font-size: 0.52rem;
+    white-space: nowrap;
   }
 
   .protocolStrip p {
@@ -3291,6 +3304,24 @@ footer > span {
     gap: 56px;
     min-height: auto;
     padding: 68px 20px 54px;
+  }
+
+  .heroCopy,
+  .heroAsk,
+  .askDock form,
+  .askDock textarea {
+    min-width: 0;
+    max-width: 100%;
+  }
+
+  .kicker {
+    flex-wrap: wrap;
+  }
+
+  .askSuggestions button {
+    max-width: 100%;
+    white-space: normal;
+    text-align: left;
   }
 
   .hero h1 {

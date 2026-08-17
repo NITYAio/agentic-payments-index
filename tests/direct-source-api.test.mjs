@@ -128,6 +128,97 @@ test("direct-source migration, ingestion, idempotency, and 30-day read work end 
     assert.equal(mpp.buyerCount, 43_831);
     assert.equal(mpp.sellerCount, 15_618);
     assert.match(body.disclosure, /daily identity counts.*never summed/i);
+
+    const mppPayload = await evidence("mpp");
+    const zeroTemplate = {
+      ...mppPayload.metrics[0],
+      transactionCount: 0,
+      settlementCount: 0,
+      volumeUsdMicros: 0,
+      buyerCount: 0,
+      sellerCount: 0,
+    };
+    const precedingMetrics = Array.from({ length: 30 }, (_, index) => ({
+      ...zeroTemplate,
+      activityDate: new Date(Date.UTC(2026, 5, 10 + index)).toISOString().slice(0, 10),
+    }));
+    const historyPayload = {
+      ...mppPayload,
+      collectorVersion: "0.1.0-test",
+      runKey: "mpp:2026-06-10:2026-08-09:history-test",
+      rangeStart: "2026-06-10T00:00:00.000Z",
+      rangeEnd: "2026-08-09T00:00:00.000Z",
+      queryHash: await runId("mpp", "history-test"),
+      metrics: [...precedingMetrics, ...mppPayload.metrics],
+      windowSummary: {
+        ...mppPayload.windowSummary,
+        rangeStart: "2026-06-10T00:00:00.000Z",
+        rangeEnd: "2026-08-09T00:00:00.000Z",
+      },
+      coverage: {
+        ...mppPayload.coverage,
+        coverageStart: "2026-06-10T00:00:00.000Z",
+        coverageEnd: "2026-08-09T00:00:00.000Z",
+      },
+    };
+    const historyInsert = await worker.fetch(
+      new Request("http://localhost/api/internal/direct-source-ingest", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(historyPayload),
+      }),
+      bindings,
+      context,
+    );
+    assert.equal(historyInsert.status, 201);
+
+    const rollingPayload = {
+      ...mppPayload,
+      collectorVersion: "0.1.0-test",
+      runKey: "mpp:2026-08-08:2026-08-09:rolling-test",
+      rangeStart: "2026-08-08T00:00:00.000Z",
+      rangeEnd: "2026-08-09T00:00:00.000Z",
+      queryHash: await runId("mpp", "rolling-test"),
+      metrics: [mppPayload.metrics.at(-1)],
+      windowSummary: {
+        ...mppPayload.metrics.at(-1),
+        rangeStart: "2026-08-08T00:00:00.000Z",
+        rangeEnd: "2026-08-09T00:00:00.000Z",
+      },
+      coverage: {
+        ...mppPayload.coverage,
+        coverageStart: "2026-08-08T00:00:00.000Z",
+        coverageEnd: "2026-08-09T00:00:00.000Z",
+      },
+    };
+    const rollingInsert = await worker.fetch(
+      new Request("http://localhost/api/internal/direct-source-ingest", {
+        method: "POST",
+        headers: {
+          authorization: `Bearer ${TOKEN}`,
+          "content-type": "application/json",
+        },
+        body: JSON.stringify(rollingPayload),
+      }),
+      bindings,
+      context,
+    );
+    assert.equal(rollingInsert.status, 201);
+
+    const historyResponse = await worker.fetch(
+      new Request("http://localhost/api/direct-source?protocol=mpp&days=0"),
+      bindings,
+      context,
+    );
+    assert.equal(historyResponse.status, 200);
+    const history = await historyResponse.json();
+    assert.equal(history.windowMetrics.length, 1);
+    assert.equal(history.windowMetrics[0].rangeStart, "2026-06-10T00:00:00.000Z");
+    assert.equal(history.windowMetrics[0].rangeEnd, "2026-08-09T00:00:00.000Z");
+    assert.equal(history.metrics.length, 60);
   } finally {
     delete env.DB;
     delete env.DIRECT_SOURCE_INGEST_TOKEN;

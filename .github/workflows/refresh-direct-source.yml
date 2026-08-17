@@ -1,0 +1,51 @@
+name: Refresh direct-source index
+
+on:
+  schedule:
+    - cron: "17 4 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: direct-source-production-refresh
+  cancel-in-progress: false
+
+jobs:
+  refresh:
+    name: Collect, ingest, and verify
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      TEMPO_RPC_URL: ${{ secrets.TEMPO_RPC_URL }}
+      DIRECT_SOURCE_INGEST_URL: ${{ secrets.DIRECT_SOURCE_INGEST_URL }}
+      DIRECT_SOURCE_INGEST_TOKEN: ${{ secrets.DIRECT_SOURCE_INGEST_TOKEN }}
+      PRODUCTION_ORIGIN: https://agenticpaymentsindex.org
+      FRESHNESS_MAX_AGE_HOURS: "30"
+      REFRESH_PROTOCOLS: mpp
+      KNOWN_BLOCKED_PROTOCOLS: x402
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 22
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.13.0
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Refresh exact rolling windows
+        run: npm run direct:refresh
+
+      - name: Verify production freshness and all-time coverage
+        run: npm run data:freshness
+
+      - name: Explain the x402 automation boundary
+        run: |
+          echo "MPP refreshes automatically from Tempo."
+          echo "x402 remains monitored but is not refreshed until a production-capable Base source is configured."

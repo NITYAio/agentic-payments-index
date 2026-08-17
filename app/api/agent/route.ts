@@ -10,7 +10,11 @@ export async function GET(request: Request) {
       release: {
         stage: "public-beta",
         discovery: "unlisted",
-        identityHistory: "backfill-in-progress",
+        identityHistory: {
+          mpp: "available",
+          x402: "backfill-in-progress",
+          combined: "awaiting-x402",
+        },
       },
       access: {
         authentication: "none",
@@ -21,7 +25,7 @@ export async function GET(request: Request) {
         network: {
           url: `${origin}/api/network`,
           description:
-            "Direct-source exact rolling 24h, 7d, and 30d aggregates and time-series buckets. All-time backfill is in progress.",
+            "Direct-source exact rolling 24h, 7d, and 30d aggregates and time-series buckets. MPP all-time history is available; x402 and combined all-time history remain evidence-gated.",
         },
         services: {
           url: `${origin}/api/services`,

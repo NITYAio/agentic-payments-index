@@ -14,8 +14,9 @@ Read the public [About page](https://agenticpaymentsindex.org/about) and
 
 ## What the index publishes
 
-- Exact rolling 24-hour, 7-day, and 30-day direct-source aggregates; all-time
-  history is visibly disabled until the direct backfill is complete.
+- Exact rolling 24-hour, 7-day, and 30-day direct-source aggregates.
+- MPP history from 16 February 2026 onward; x402 and combined all-time views
+  remain visibly unavailable until terminal-recipient identity history is complete.
 - MPP and x402 views plus a clearly disclosed combined view.
 - Complete paginated resolved-service directories for the selected window.
 - A live analysis endpoint for totals, averages, protocol comparisons, trends,
@@ -66,7 +67,7 @@ The service endpoint accepts:
 | Parameter | Values |
 |---|---|
 | `protocol` | `all`, `mpp`, `x402` |
-| `days` | `1`, `7`, `30` (`0` is reserved for the in-progress all-time backfill) |
+| `days` | `1`, `7`, `30`; `0` returns available indexed history and preserves protocol-specific evidence gates |
 | `sort` | `transactions`, `volume`, `buyers` |
 | `page` | integer starting at `1` |
 | `pageSize` | integer from `10` to `50` |

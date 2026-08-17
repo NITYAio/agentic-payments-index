@@ -128,12 +128,22 @@ export async function GET(request: Request) {
       updatedAt: row.updated_at,
     }));
     const requestedWindowMs = days * 86_400_000;
-    const coverageByProtocol = new Map(
-      coverage.map((row) => [
-        `${row.protocol}|${row.network}|${row.measurementUnit}`,
-        row,
-      ]),
-    );
+    const duration = (row: WindowMetricRow) =>
+      new Date(row.range_end).getTime() - new Date(row.range_start).getTime();
+    const widestWindowByProtocol = new Map<string, WindowMetricRow>();
+    if (days === 0) {
+      for (const row of windowResult.results) {
+        const key = `${row.protocol}|${row.network}|${row.measurement_unit}`;
+        const current = widestWindowByProtocol.get(key);
+        if (
+          !current ||
+          duration(row) > duration(current) ||
+          (duration(row) === duration(current) && row.range_end > current.range_end)
+        ) {
+          widestWindowByProtocol.set(key, row);
+        }
+      }
+    }
     const seenProtocols = new Set<string>();
     const windowMetrics = windowResult.results
       .filter(
@@ -144,13 +154,8 @@ export async function GET(request: Request) {
               requestedWindowMs
             );
           }
-          const range = coverageByProtocol.get(
-            `${row.protocol}|${row.network}|${row.measurement_unit}`,
-          );
-          return Boolean(
-            range?.coverageStart === row.range_start &&
-            range?.coverageEnd === row.range_end,
-          );
+          const key = `${row.protocol}|${row.network}|${row.measurement_unit}`;
+          return widestWindowByProtocol.get(key)?.run_id === row.run_id;
         },
       )
       .filter((row) => {

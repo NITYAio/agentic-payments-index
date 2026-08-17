@@ -53,6 +53,7 @@ const WINDOW_OPTIONS = [
   { days: 1, label: "24h" },
   { days: 7, label: "7d" },
   { days: 30, label: "30d" },
+  { days: 0, label: "All" },
 ] as const;
 
 function compact(value: number) {
@@ -197,7 +198,6 @@ export default function DirectPreview() {
               {option.label}
             </button>
           ))}
-          <button disabled title="All-time source backfill is still running" type="button">All</button>
         </div>
         <p>
           {data?.windowMetrics[0]
@@ -208,6 +208,12 @@ export default function DirectPreview() {
 
       {error ? <section className="directPreviewState">{error}</section> : null}
       {loading && !error ? <section className="directPreviewState">Loading verified evidence…</section> : null}
+      {days === 0 && data?.available && !loading && !data.windowMetrics.some((metric) => metric.protocol === "x402") ? (
+        <section className="directPreviewState">
+          MPP history is available. x402 and combined all-time views remain unavailable
+          until terminal-recipient identity history is complete.
+        </section>
+      ) : null}
 
       {data?.available && !loading ? (
         <>

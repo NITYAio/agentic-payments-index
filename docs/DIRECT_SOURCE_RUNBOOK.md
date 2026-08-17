@@ -1,7 +1,9 @@
 # Direct-source indexing runbook
 
 Status: independent collection and terminal-recipient normalization implemented;
-production cutover pending final validation and deployment.
+rolling production cutover complete. MPP available history is active from
+2026-02-16. x402 available history remains evidence-gated pending a
+production-capable Base source and terminal-recipient identity backfill.
 
 ## Launch scope
 
@@ -19,7 +21,8 @@ The collectors never accept MPPScan or x402scan totals as primary activity evide
 
 ## Cost controls
 
-- Coinbase CDP SQL includes a monthly query allowance. Dense x402 windows are
+- Coinbase CDP SQL requires an attached payment method even when use remains
+  within its current free allowance. Dense x402 windows are
   divided into UTC-day slices and may be divided again when a response reaches
   provider row or execution limits, so query use depends on activity rather
   than a fixed one-query-per-window estimate. Record actual usage after each
@@ -31,6 +34,11 @@ The collectors never accept MPPScan or x402scan totals as primary activity evide
 - Set provider billing alerts before enabling any paid plan. Do not enable automatic uncapped RPC or BigQuery spend.
 
 Expected public-beta infrastructure cost: **$0–$15 per month**: $0–$5 for the application and $0–$10 for a reliable Tempo endpoint. A paid Workers plan is optional at launch and starts at $5 per month. There is no required one-time infrastructure charge.
+
+The scheduled refresh is deliberately MPP-only while x402's production Base
+source is unresolved. The freshness job reports x402 as a visible known-blocked
+warning instead of silently treating stale values as current. Remove that gate
+only after a bounded, production-capable Base source is configured and tested.
 
 ## Secret setup
 
@@ -87,6 +95,17 @@ checked artifact through the authenticated ingestion endpoint, and never prints
 the token.
 
 The endpoint is idempotent. Replaying the same immutable run key and query hash returns the existing completed run; changing the query under the same run key is rejected.
+
+Refresh the exact rolling windows and then audit production freshness:
+
+```bash
+REFRESH_PROTOCOLS=mpp npm run direct:refresh
+KNOWN_BLOCKED_PROTOCOLS=x402 npm run data:freshness
+```
+
+`REFRESH_PROTOCOLS` is explicit so a protocol cannot begin consuming a paid
+provider by accident. The GitHub Actions schedule uses `mpp` until the x402
+source gate is intentionally removed.
 
 ## Reconciliation gates
 

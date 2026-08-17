@@ -38,7 +38,7 @@ The public headline remains **“The machine economy, made legible.”** “Agen
 - **MPP payment value:** value of current-version MPP charges and settled sessions.
 - **x402 payment value:** payer-originated USDC value counted once per reconstructed payment; receive-and-forward chains resolve to the terminal recipient. Recipient net value and gross transfer movement remain auditable.
 - **Average value:** protocol-specific value divided by qualifying records. No combined MPP + x402 average is calculated.
-- **Average daily transactions:** qualifying records divided by the exact rolling-window length. All-time remains disabled until backfill.
+- **Average daily transactions:** qualifying records divided by the exact rolling-window length. Available-history calculations disclose their first and last indexed timestamps.
 - **Active payer addresses:** distinct network-normalized payer addresses observed in the selected window. This is not a count of people or autonomous agents. One actor can use several addresses; several actors can share an address; combined protocol counts may overlap.
 - **Active recipient addresses:** distinct network-normalized recipient addresses that received at least one observed payment in the selected window. This is not a server, company, or service-directory count.
 - **Resolved service identities:** verified mappings from payment recipients to service or directory identities. These are published separately from raw recipient-address counts.
@@ -135,8 +135,9 @@ The source of truth is direct read-only indexing from Tempo and supported x402 s
 - compressed raw archives for reproducibility.
 
 Direct-chain 24-hour, 7-day, and 30-day results are live in public beta after
-contract coverage, decoding, and reconciliation tests. All-time remains
-disabled until its independent backfill is complete.
+contract coverage, decoding, and reconciliation tests. MPP available history
+is live from 16 February 2026. x402 and combined all-time views remain disabled
+until independently reconstructed terminal-recipient identity history is complete.
 
 ## Open source, IP, and API
 
@@ -168,7 +169,9 @@ method cannot prove that every matched transfer is one end-user payment.
 
 1. Protocol selection changes every visible chart and metric; a single-protocol view never retains the other protocol’s series or legend.
 2. 24h, 7d, and 30d work across overview, network, evidence, and service-directory
-   views. All-time is visible but disabled until the direct backfill completes.
+   views. Available history is enabled per protocol only when that protocol's
+   independently verified backfill is complete; combined history requires every
+   included protocol.
 3. All displayed numbers are live, derived, or explicitly unavailable—never placeholders presented as facts.
 4. Ask the Index answers supported query classes in real time and discloses unsupported evidence instead of guessing.
 5. Query regression tests cover phrasing variants, protocol selection, all windows, comparisons, spikes, cohorts, wallets, and autonomy.

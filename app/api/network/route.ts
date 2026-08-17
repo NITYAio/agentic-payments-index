@@ -73,11 +73,6 @@ type DailyRow = {
   seller_count: number;
 };
 
-type CoverageRangeRow = {
-  coverage_start: string | null;
-  coverage_end: string | null;
-};
-
 type MppService = Omit<Service, "protocol" | "network">;
 
 type X402Seller = {
@@ -270,27 +265,19 @@ async function loadDirectProtocol(protocol: ProtocolKey): Promise<ProtocolData> 
           "Payment value",
         );
   const d1 = await getD1();
-  const [windowResult, coverageRange] = await Promise.all([
-    d1
-      .prepare(
-        `SELECT run_id, protocol, network, range_start, range_end,
-                transaction_count, volume_usd_micros, buyer_count, seller_count
-         FROM protocol_window_metrics
-         WHERE protocol = ?
-         ORDER BY range_end DESC`,
-      )
-      .bind(protocol)
-      .all<WindowRow>(),
-    d1
-      .prepare(
-        `SELECT MIN(coverage_start) AS coverage_start, MAX(coverage_end) AS coverage_end
-         FROM source_coverage WHERE protocol = ?`,
-      )
-      .bind(protocol)
-      .first<CoverageRangeRow>(),
-  ]);
+  const windowResult = await d1
+    .prepare(
+      `SELECT run_id, protocol, network, range_start, range_end,
+              transaction_count, volume_usd_micros, buyer_count, seller_count
+       FROM protocol_window_metrics
+       WHERE protocol = ?
+       ORDER BY range_end DESC`,
+    )
+    .bind(protocol)
+    .all<WindowRow>();
 
   const selected = new Map<PeriodKey, WindowRow>();
+  let widestWindow: WindowRow | null = null;
   for (const row of windowResult.results) {
     const days = Math.round(windowDurationDays(row));
     const key = String(days) as PeriodKey;
@@ -298,12 +285,16 @@ async function loadDirectProtocol(protocol: ProtocolKey): Promise<ProtocolData> 
       selected.set(key, row);
     }
     if (
-      coverageRange?.coverage_start === row.range_start &&
-      coverageRange?.coverage_end === row.range_end &&
-      !selected.has("0")
+      !widestWindow ||
+      windowDurationDays(row) > windowDurationDays(widestWindow) ||
+      (windowDurationDays(row) === windowDurationDays(widestWindow) &&
+        row.range_end > widestWindow.range_end)
     ) {
-      selected.set("0", row);
+      widestWindow = row;
     }
+  }
+  if (widestWindow && windowDurationDays(widestWindow) > 30) {
+    selected.set("0", widestWindow);
   }
 
   const runIds = [...selected.values()].map((row) => row.run_id);
@@ -382,6 +373,25 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
     PERIOD_KEYS.map((key) => {
       const left = mpp.periods[key];
       const right = x402.periods[key];
+      if (
+        key === "0" &&
+        (!left.rangeStart || !left.rangeEnd || !right.rangeStart || !right.rangeEnd)
+      ) {
+        return [
+          key,
+          {
+            stats: {
+              totalTransactions: 0,
+              totalVolume: 0,
+              uniqueSenders: 0,
+              uniqueRecipients: 0,
+            },
+            buckets: [],
+            rangeStart: null,
+            rangeEnd: null,
+          },
+        ];
+      }
       return [
         key,
         {

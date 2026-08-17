@@ -1133,6 +1133,16 @@ export default function Home() {
   const selectedKey = String(period) as "0" | "1" | "7" | "30";
   const selectedProtocolData = data.protocols[protocol];
   const selected = selectedProtocolData.periods[selectedKey];
+  const allTimeAvailable = Boolean(
+    selectedProtocolData.periods["0"].rangeStart &&
+      selectedProtocolData.periods["0"].rangeEnd,
+  );
+  const allTimeUnavailableTitle =
+    protocol === "mpp"
+      ? "MPP history is still loading"
+      : protocol === "x402"
+        ? "x402 all-time identity history is still being backfilled"
+        : "Combined all-time data will unlock after x402 identity history is complete";
   const fallbackAnswer = useMemo(
     () => answerQuestion(data, submittedQuestion, protocol),
     [data, submittedQuestion, protocol],
@@ -1170,6 +1180,17 @@ export default function Home() {
   const combinedTransactions =
     mppSelected.totalTransactions + x402Selected.totalTransactions;
 
+  function protocolHasAllTime(nextProtocol: ProtocolKey) {
+    const nextPeriod = data.protocols[nextProtocol].periods["0"];
+    return Boolean(nextPeriod.rangeStart && nextPeriod.rangeEnd);
+  }
+
+  function selectProtocol(nextProtocol: ProtocolKey) {
+    setProtocol(nextProtocol);
+    if (period === 0 && !protocolHasAllTime(nextProtocol)) setPeriod(30);
+    setServicePage(1);
+  }
+
   async function runQuestion(
     nextQuestion: string,
     requestedProtocol = protocol,
@@ -1179,7 +1200,11 @@ export default function Home() {
     if (!trimmed) return;
     setSubmittedQuestion(trimmed);
     const nextProtocol = protocolForQuestion(trimmed, requestedProtocol);
-    setProtocol(nextProtocol);
+    const nextPeriod =
+      requestedPeriod === 0 && !protocolHasAllTime(nextProtocol)
+        ? 30
+        : requestedPeriod;
+    selectProtocol(nextProtocol);
     setRemoteAnswer(null);
     setAnswerError("");
     setHasAsked(true);
@@ -1191,7 +1216,7 @@ export default function Home() {
         body: JSON.stringify({
           question: trimmed,
           protocol: nextProtocol,
-          windowDays: requestedPeriod,
+          windowDays: nextPeriod,
         }),
       });
       if (!response.ok) throw new Error("Analysis request failed");
@@ -1362,8 +1387,8 @@ export default function Home() {
         <aside className="publicBetaBar" aria-label="Public beta notice">
           <strong>Public beta</strong>
           <span>
-            Direct-chain 24h, 7d, and 30d windows are live. Identity history and
-            all-time coverage are being backfilled.
+            Direct-chain 24h, 7d, and 30d windows are live. MPP history is
+            available; x402 identity history is still being backfilled.
           </span>
           <a href="#machine-evidence">Coverage details ↓</a>
         </aside>
@@ -1460,8 +1485,8 @@ export default function Home() {
       <aside className="publicBetaBar" aria-label="Public beta notice">
         <strong>Public beta</strong>
         <span>
-          Direct-chain 24h, 7d, and 30d windows are live. Identity history and
-          all-time coverage are being backfilled.
+          Direct-chain 24h, 7d, and 30d windows are live. MPP history is
+          available; x402 identity history is still being backfilled.
         </span>
         <a href="/coverage">Coverage details ↗</a>
       </aside>
@@ -1508,10 +1533,7 @@ export default function Home() {
             <button
               key={item}
               className={protocol === item ? "active" : ""}
-              onClick={() => {
-                setProtocol(item);
-                setServicePage(1);
-              }}
+              onClick={() => selectProtocol(item)}
               aria-pressed={protocol === item}
             >
               {item === "all" ? "All protocols" : item.toUpperCase()}
@@ -1669,8 +1691,8 @@ export default function Home() {
                 <button
                   key={item.days}
                   className={period === item.days ? "active" : ""}
-                  disabled={item.disabled}
-                  title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
+                  disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                  title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                   onClick={() => {
                     if (item.disabled) return;
                     setPeriod(item.days);
@@ -1869,8 +1891,8 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
-                disabled={item.disabled}
-                title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
+                disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                 onClick={() => {
                   if (item.disabled) return;
                   setPeriod(item.days);
@@ -2122,8 +2144,8 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
-                disabled={item.disabled}
-                title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
+                disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                 onClick={() => {
                   if (item.disabled) return;
                   setPeriod(item.days);
@@ -2178,8 +2200,8 @@ export default function Home() {
                 <button
                   key={item.days}
                   className={period === item.days ? "active" : ""}
-                  disabled={item.disabled}
-                  title={item.disabled ? "All-time direct-source backfill is in progress" : undefined}
+                  disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                  title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                   onClick={() => {
                     if (item.disabled) return;
                     setPeriod(item.days);
