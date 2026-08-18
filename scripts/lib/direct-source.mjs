@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 
-export const COLLECTOR_VERSION = "2026-08-15.1";
+export const COLLECTOR_VERSION = "2026-08-18.1";
 export const MPP_MEMO_PREFIX = "0xef1ed71201";
 export const TEMPO_CHANNEL_RESERVE = "0x4d50500000000000000000000000000000000000";
 export const TEMPO_SETTLED_TOPIC =
@@ -159,6 +159,47 @@ export function decodeMppServerFingerprint(memo) {
   return `0x${memo.slice(12, 32)}`.toLowerCase();
 }
 
+export function summarizeTrustPayments(amounts, excludedZeroCount = 0, excludedSelfCount = 0) {
+  const sorted = [...amounts].map((amount) => BigInt(amount)).sort((left, right) =>
+    left < right ? -1 : left > right ? 1 : 0,
+  );
+  const total = sorted.reduce((sum, amount) => sum + amount, 0n);
+  const middle = Math.floor(sorted.length / 2);
+  const median = sorted.length === 0
+    ? 0n
+    : sorted.length % 2 === 1
+      ? sorted[middle]
+      : (sorted[middle - 1] + sorted[middle]) / 2n;
+  const above = (dollars) => sorted.filter((amount) => amount > BigInt(dollars) * 1_000_000n).length;
+  return {
+    qualifyingPaymentCount: sorted.length,
+    qualifyingVolumeUsdMicros: safeNumber(total, "qualifying MPP payment volume"),
+    medianPaymentUsdMicros: safeNumber(median, "median MPP payment value"),
+    maxPaymentUsdMicros: safeNumber(sorted.at(-1) ?? 0n, "maximum MPP payment value"),
+    overOneCount: above(1),
+    overTenCount: above(10),
+    overHundredCount: above(100),
+    overThousandCount: above(1_000),
+    excludedZeroCount,
+    excludedSelfCount,
+  };
+}
+
+function classifyTrustCandidates(candidates) {
+  const qualifying = [];
+  let excludedZeroCount = 0;
+  let excludedSelfCount = 0;
+  for (const candidate of candidates.values()) {
+    if (candidate.self) excludedSelfCount += 1;
+    else if (candidate.amount === 0n) excludedZeroCount += 1;
+    else qualifying.push(candidate.amount);
+  }
+  return {
+    amounts: qualifying,
+    ...summarizeTrustPayments(qualifying, excludedZeroCount, excludedSelfCount),
+  };
+}
+
 export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps }) {
   const dates = new Map();
   const windowPayments = new Set();
@@ -169,6 +210,7 @@ export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps 
   const windowServerFingerprints = new Set();
   const windowRecipientAddresses = new Set();
   const windowSessionPayees = new Set();
+  const windowTrustCandidates = new Map();
   let acceptedLogCount = 0;
   let acceptedChargeLogCount = 0;
   let acceptedSessionLogCount = 0;
@@ -188,6 +230,7 @@ export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps 
       serverFingerprints: new Set(),
       recipientAddresses: new Set(),
       sessionPayees: new Set(),
+      trustCandidates: new Map(),
       volumeUsdMicros: 0n,
       chargeVolumeUsdMicros: 0n,
       sessionVolumeUsdMicros: 0n,
@@ -209,6 +252,14 @@ export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps 
     const amount = BigInt(log.data ?? "0x0");
     const logicalPayment = `charge:${log.transactionHash.toLowerCase()}|${memo.toLowerCase()}`;
     const transactionHash = log.transactionHash.toLowerCase();
+    const trustCandidate = day.trustCandidates.get(logicalPayment) ?? { amount: 0n, self: false };
+    trustCandidate.amount += amount;
+    trustCandidate.self ||= payer === recipient;
+    day.trustCandidates.set(logicalPayment, trustCandidate);
+    const windowTrustCandidate = windowTrustCandidates.get(logicalPayment) ?? { amount: 0n, self: false };
+    windowTrustCandidate.amount += amount;
+    windowTrustCandidate.self ||= payer === recipient;
+    windowTrustCandidates.set(logicalPayment, windowTrustCandidate);
     day.payments.add(logicalPayment);
     day.chargePayments.add(logicalPayment);
     day.settlements.add(transactionHash);
@@ -240,6 +291,8 @@ export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps 
     const deltaPaid = BigInt(`0x${words[1]}`);
     const transactionHash = log.transactionHash.toLowerCase();
     const logicalPayment = `session:${transactionHash}|${String(log.logIndex ?? "0x0").toLowerCase()}`;
+    day.trustCandidates.set(logicalPayment, { amount: deltaPaid, self: payer === payee });
+    windowTrustCandidates.set(logicalPayment, { amount: deltaPaid, self: payer === payee });
     day.payments.add(logicalPayment);
     day.sessionPayments.add(logicalPayment);
     day.settlements.add(transactionHash);
@@ -273,9 +326,12 @@ export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps 
       recipientAddresses: windowRecipientAddresses,
       sessionPayees: windowSessionPayees,
     },
+    windowTrust: classifyTrustCandidates(windowTrustCandidates),
     metrics: [...dates.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
-      .map(([activityDate, day]) => ({
+      .map(([activityDate, day]) => {
+        const trust = classifyTrustCandidates(day.trustCandidates);
+        return {
         activityDate,
         measurementUnit: "protocol_payment",
         transactionCount: day.payments.size,
@@ -287,10 +343,21 @@ export function aggregateMppPayments({ chargeLogs, sessionLogs, blockTimestamps 
         sessionVolumeUsdMicros: safeNumber(day.sessionVolumeUsdMicros, "Tempo session USD volume"),
         buyerCount: day.buyers.size,
         sellerCount: day.serverFingerprints.size,
+        qualifyingPaymentCount: trust.qualifyingPaymentCount,
+        qualifyingVolumeUsdMicros: trust.qualifyingVolumeUsdMicros,
+        medianPaymentUsdMicros: trust.medianPaymentUsdMicros,
+        maxPaymentUsdMicros: trust.maxPaymentUsdMicros,
+        overOneCount: trust.overOneCount,
+        overTenCount: trust.overTenCount,
+        overHundredCount: trust.overHundredCount,
+        overThousandCount: trust.overThousandCount,
+        excludedZeroCount: trust.excludedZeroCount,
+        excludedSelfCount: trust.excludedSelfCount,
         evidenceLevel: "deterministic",
         isAdjusted: false,
         limitation,
-      })),
+      };
+      }),
   };
 }
 
@@ -940,6 +1007,16 @@ export function fillDailyMetricRange(from, to, metrics, template) {
         sessionVolumeUsdMicros: 0,
         buyerCount: 0,
         sellerCount: 0,
+        qualifyingPaymentCount: 0,
+        qualifyingVolumeUsdMicros: 0,
+        medianPaymentUsdMicros: 0,
+        maxPaymentUsdMicros: 0,
+        overOneCount: 0,
+        overTenCount: 0,
+        overHundredCount: 0,
+        overThousandCount: 0,
+        excludedZeroCount: 0,
+        excludedSelfCount: 0,
       },
     );
   }

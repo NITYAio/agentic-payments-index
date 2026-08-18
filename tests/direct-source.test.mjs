@@ -149,12 +149,40 @@ test("Tempo aggregation counts a split charge once and sums its recipients", () 
     sessionVolumeUsdMicros: 0,
     buyerCount: 1,
     sellerCount: 2,
+    qualifyingPaymentCount: 2,
+    qualifyingVolumeUsdMicros: 6_000_000,
+    medianPaymentUsdMicros: 3_000_000,
+    maxPaymentUsdMicros: 3_000_000,
+    overOneCount: 2,
+    overTenCount: 0,
+    overHundredCount: 0,
+    overThousandCount: 0,
+    excludedZeroCount: 0,
+    excludedSelfCount: 0,
     evidenceLevel: "deterministic",
     isAdjusted: false,
     limitation:
       "Counts current-version MPP charges in pathUSD and USDC.e plus TIP-1034 Settled session events; session value uses deltaPaid. " +
       "Active server identities are memo fingerprints observed on charges. NANOUSD, invalid or older memos, and off-chain vouchers not yet settled are excluded.",
   });
+});
+
+test("MPP Trust Barometer excludes zero-value and self-payments", () => {
+  const result = aggregateMppPayments({
+    chargeLogs: [
+      tempoLog({ data: "0x0", index: 1, memo: mppMemoOne, seller: sellerOneTopic }),
+      tempoLog({ data: "0x1e8480", index: 2, memo: mppMemoTwo, seller: payerTopic }),
+      tempoLog({ data: "0x2dc6c0", index: 3, memo: `0xef1ed71201${"c".repeat(54)}`, seller: sellerTwoTopic }),
+    ],
+    sessionLogs: [],
+    blockTimestamps: new Map([[10, new Date("2026-08-07T12:00:00.000Z")]]),
+  });
+  assert.equal(result.metrics[0].transactionCount, 3, "market activity remains unadjusted");
+  assert.equal(result.metrics[0].qualifyingPaymentCount, 1);
+  assert.equal(result.metrics[0].qualifyingVolumeUsdMicros, 3_000_000);
+  assert.equal(result.metrics[0].overOneCount, 1);
+  assert.equal(result.metrics[0].excludedZeroCount, 1);
+  assert.equal(result.metrics[0].excludedSelfCount, 1);
 });
 
 test("MPP aggregation combines charges and session settlements without mixing identity schemes", () => {

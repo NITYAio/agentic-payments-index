@@ -18,6 +18,16 @@ type MetricRow = {
   session_volume_usd_micros: number;
   buyer_count: number;
   seller_count: number;
+  qualifying_payment_count: number;
+  qualifying_volume_usd_micros: number;
+  median_payment_usd_micros: number;
+  max_payment_usd_micros: number;
+  over_one_count: number;
+  over_ten_count: number;
+  over_hundred_count: number;
+  over_thousand_count: number;
+  excluded_zero_count: number;
+  excluded_self_count: number;
   evidence_level: string;
   is_adjusted: number;
   limitation: string | null;
@@ -59,6 +69,16 @@ type WindowMetricRow = {
   session_volume_usd_micros: number;
   buyer_count: number;
   seller_count: number;
+  qualifying_payment_count: number;
+  qualifying_volume_usd_micros: number;
+  median_payment_usd_micros: number;
+  max_payment_usd_micros: number;
+  over_one_count: number;
+  over_ten_count: number;
+  over_hundred_count: number;
+  over_thousand_count: number;
+  excluded_zero_count: number;
+  excluded_self_count: number;
   evidence_level: string;
   is_adjusted: number;
   limitation: string | null;
@@ -96,7 +116,11 @@ export async function GET(request: Request) {
               transaction_count, charge_count, session_count, settlement_count, raw_transfer_count,
               volume_usd_micros, recipient_volume_usd_micros, gross_volume_usd_micros,
               charge_volume_usd_micros, session_volume_usd_micros,
-              buyer_count, seller_count, evidence_level, is_adjusted,
+              buyer_count, seller_count, qualifying_payment_count,
+              qualifying_volume_usd_micros, median_payment_usd_micros,
+              max_payment_usd_micros, over_one_count, over_ten_count,
+              over_hundred_count, over_thousand_count, excluded_zero_count,
+              excluded_self_count, evidence_level, is_adjusted,
               limitation, updated_at
        FROM protocol_window_metrics
        WHERE 1 = 1${protocolClause}
@@ -183,6 +207,16 @@ export async function GET(request: Request) {
         sessionVolumeUsd: row.session_volume_usd_micros / 1_000_000,
         buyerCount: row.buyer_count,
         sellerCount: row.seller_count,
+        qualifyingPaymentCount: row.qualifying_payment_count,
+        qualifyingVolumeUsd: row.qualifying_volume_usd_micros / 1_000_000,
+        medianPaymentUsd: row.median_payment_usd_micros / 1_000_000,
+        maxPaymentUsd: row.max_payment_usd_micros / 1_000_000,
+        overOneCount: row.over_one_count,
+        overTenCount: row.over_ten_count,
+        overHundredCount: row.over_hundred_count,
+        overThousandCount: row.over_thousand_count,
+        excludedZeroCount: row.excluded_zero_count,
+        excludedSelfCount: row.excluded_self_count,
         evidenceLevel: row.evidence_level,
         adjusted: Boolean(row.is_adjusted),
         limitation: row.limitation,
@@ -197,6 +231,10 @@ export async function GET(request: Request) {
                     raw_transfer_count, volume_usd_micros, recipient_volume_usd_micros,
                     gross_volume_usd_micros, charge_volume_usd_micros,
                     session_volume_usd_micros, buyer_count, seller_count,
+                    qualifying_payment_count, qualifying_volume_usd_micros,
+                    median_payment_usd_micros, max_payment_usd_micros,
+                    over_one_count, over_ten_count, over_hundred_count,
+                    over_thousand_count, excluded_zero_count, excluded_self_count,
                     evidence_level, is_adjusted, limitation, updated_at
              FROM daily_protocol_metrics
              WHERE run_id IN (${runIds.map(() => "?").join(", ")})
@@ -223,6 +261,16 @@ export async function GET(request: Request) {
       sessionVolumeUsd: row.session_volume_usd_micros / 1_000_000,
       buyerCount: row.buyer_count,
       sellerCount: row.seller_count,
+      qualifyingPaymentCount: row.qualifying_payment_count,
+      qualifyingVolumeUsd: row.qualifying_volume_usd_micros / 1_000_000,
+      medianPaymentUsd: row.median_payment_usd_micros / 1_000_000,
+      maxPaymentUsd: row.max_payment_usd_micros / 1_000_000,
+      overOneCount: row.over_one_count,
+      overTenCount: row.over_ten_count,
+      overHundredCount: row.over_hundred_count,
+      overThousandCount: row.over_thousand_count,
+      excludedZeroCount: row.excluded_zero_count,
+      excludedSelfCount: row.excluded_self_count,
       evidenceLevel: row.evidence_level,
       adjusted: Boolean(row.is_adjusted),
       limitation: row.limitation,

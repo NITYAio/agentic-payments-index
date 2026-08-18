@@ -76,11 +76,30 @@ type DirectoryData = {
 
 type TrustBarometerData = {
   available: boolean;
-  status: "verified" | "unavailable";
+  status: "verified" | "partial" | "unavailable";
+  scope?: "mpp" | null;
   coverageStart: string | null;
   coverageEnd: string | null;
   reason: string;
   methodology: string;
+  metrics?: {
+    qualifyingPaymentCount: number;
+    qualifyingVolumeUsd: number;
+    averagePaymentUsd: number;
+    medianPaymentUsd: number;
+    maxPaymentUsd: number;
+    excludedZeroCount: number;
+    excludedSelfCount: number;
+    daysSinceTracking: number;
+    thresholds: Array<{ amount: number; count: number; delta: number | null }>;
+    series: Array<{
+      date: string;
+      qualifyingPaymentCount: number;
+      averagePaymentUsd: number | null;
+      medianPaymentUsd: number | null;
+      maxPaymentUsd: number | null;
+    }>;
+  } | null;
 };
 
 type SubmissionResult = {
@@ -220,11 +239,13 @@ const EMPTY_DIRECTORY: DirectoryData = {
 const EMPTY_TRUST_BAROMETER: TrustBarometerData = {
   available: false,
   status: "unavailable",
+  scope: null,
   coverageStart: null,
   coverageEnd: null,
   reason:
     "Agent-commerce classification is being validated. No threshold is published until free calls, mints, self-transfers, and speculative flows can be removed reproducibly.",
   methodology: "/coverage#trust-barometer-method",
+  metrics: null,
 };
 
 const PROTOCOL_LABELS: Record<ProtocolKey, string> = {
@@ -260,26 +281,34 @@ function freshnessFor(
   period: 0 | 1 | 7 | 30,
 ) {
   const key = String(period) as "0" | "1" | "7" | "30";
-  const ends =
+  const sources =
     protocol === "all"
-      ? [data.protocols.mpp.periods[key].rangeEnd, data.protocols.x402.periods[key].rangeEnd]
-      : [data.protocols[protocol].periods[key].rangeEnd];
-  const timestamps = ends
-    .filter((value): value is string => Boolean(value))
-    .map((value) => new Date(value).getTime())
-    .filter(Number.isFinite);
-  if (!timestamps.length) {
+      ? [
+          { label: "MPP", value: data.protocols.mpp.periods[key].rangeEnd },
+          { label: "x402", value: data.protocols.x402.periods[key].rangeEnd },
+        ]
+      : [{ label: PROTOCOL_LABELS[protocol], value: data.protocols[protocol].periods[key].rangeEnd }];
+  const completed = sources
+    .filter((source): source is { label: string; value: string } => Boolean(source.value))
+    .map((source) => ({ ...source, timestamp: new Date(source.value).getTime() }))
+    .filter((source) => Number.isFinite(source.timestamp));
+  if (!completed.length) {
     return { label: "Data unavailable", shortLabel: "Unavailable", className: "statusUnavailable", exact: "No completed source window" };
   }
-  const oldest = new Date(Math.min(...timestamps)).toISOString();
+  const oldestSource = completed.reduce((oldest, source) => source.timestamp < oldest.timestamp ? source : oldest);
+  const oldest = new Date(oldestSource.timestamp).toISOString();
   const ageMinutes = Math.max(0, (Date.now() - new Date(oldest).getTime()) / 60_000);
+  const sourcePrefix = protocol === "all" ? `${oldestSource.label} ` : "";
+  const exact = protocol === "all"
+    ? completed.map((source) => `${source.label} updated through ${exactTime(source.value)} UTC`).join(" · ")
+    : `Updated through ${exactTime(oldest)} UTC`;
   if (ageMinutes <= 90) {
-    return { label: `Live · updated ${relativeTime(oldest)}`, shortLabel: `Live · ${relativeTime(oldest)}`, className: "statusLive", exact: `Updated through ${exactTime(oldest)} UTC` };
+    return { label: `Live · updated ${relativeTime(oldest)}`, shortLabel: `Live · ${relativeTime(oldest)}`, className: "statusLive", exact };
   }
   if (ageMinutes <= 12 * 60) {
-    return { label: `Delayed · updated ${relativeTime(oldest)}`, shortLabel: `Delayed · ${relativeTime(oldest)}`, className: "statusDelayed", exact: `Oldest included protocol updated through ${exactTime(oldest)} UTC` };
+    return { label: `${sourcePrefix}delayed · updated ${relativeTime(oldest)}`, shortLabel: `${sourcePrefix}delayed · ${relativeTime(oldest)}`, className: "statusDelayed", exact };
   }
-  return { label: `Stale · updated ${relativeTime(oldest)}`, shortLabel: `Stale · ${relativeTime(oldest)}`, className: "statusStale", exact: `Oldest included protocol updated through ${exactTime(oldest)} UTC` };
+  return { label: `${sourcePrefix}delayed · updated ${relativeTime(oldest)}`, shortLabel: `${sourcePrefix}delayed · ${relativeTime(oldest)}`, className: "statusStale", exact };
 }
 
 function relativeTime(dateString: string) {
@@ -997,7 +1026,27 @@ function TrustBarometer({
   protocol: ProtocolKey;
   onPeriodChange: (next: 0 | 7 | 30 | 90) => void;
 }) {
-  const thresholds = ["$1+", "$10+", "$100+", "$1,000+"];
+  const metrics = data.metrics ?? null;
+  const series = metrics?.series.filter(
+    (row) => row.averagePaymentUsd !== null && row.medianPaymentUsd !== null,
+  ) ?? [];
+  const yMax = Math.max(1, ...series.map((row) => row.maxPaymentUsd ?? 0));
+  const chartPoints = (key: "averagePaymentUsd" | "medianPaymentUsd") =>
+    series
+      .map((row, index) => {
+        const x = series.length < 2 ? 500 : 54 + (index / (series.length - 1)) * 892;
+        const value = row[key] ?? 0;
+        const y = 224 - (value / yMax) * 176;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .join(" ");
+  const largestIndex = series.reduce(
+    (best, row, index) => (row.maxPaymentUsd ?? 0) > (series[best]?.maxPaymentUsd ?? 0) ? index : best,
+    0,
+  );
+  const largest = series[largestIndex];
+  const largestX = series.length < 2 ? 500 : 54 + (largestIndex / Math.max(1, series.length - 1)) * 892;
+  const largestY = largest ? 224 - ((largest.maxPaymentUsd ?? 0) / yMax) * 176 : 224;
   return (
     <section className="trustBarometer" id="trust-barometer">
       <div className="trustHeader">
@@ -1035,36 +1084,84 @@ function TrustBarometer({
               formula="Qualifying payment value ÷ qualifying payments, after excluded activity is removed."
               example="A routed payment is counted once at its terminal-recipient amount."
             />
-            <strong>{data.available ? "Loading verified series" : "Awaiting verified classification"}</strong>
+            <strong>
+              {metrics
+                ? `${usd(metrics.averagePaymentUsd, true)} average · ${usd(metrics.medianPaymentUsd, true)} median`
+                : "Awaiting verified classification"}
+            </strong>
           </div>
           <span className={data.available ? "trustVerified" : "trustEvidenceGate"}>
-            {data.available ? "Verified" : "Evidence gate"}
+            {data.status === "partial" ? "MPP measured · x402 pending" : data.available ? "Verified" : "Evidence gate"}
           </span>
         </div>
-        <div className="trustAnticipation" role="img" aria-label={`Trust Barometer unavailable for ${PROTOCOL_LABELS[protocol]}. ${data.reason}`}>
-          <div className="trustScale" aria-hidden="true"><span>$10</span><span>$1</span><span>$0</span></div>
-          <div className="trustPlot" aria-hidden="true">
-            <i /><i /><i />
-            <span className="trustPendingLine" />
+        {metrics ? (
+          <div className="trustLiveChart">
+            <div className="trustLegend">
+              <span><i className="average" /> Average</span>
+              <span><i className="median" /> Median</span>
+              <span>{compact(metrics.qualifyingPaymentCount)} qualifying payments</span>
+            </div>
+            <svg viewBox="0 0 1000 260" role="img" aria-label={`Average and median MPP ticket size over ${period} days`}>
+              <line x1="54" y1="48" x2="946" y2="48" />
+              <line x1="54" y1="136" x2="946" y2="136" />
+              <line x1="54" y1="224" x2="946" y2="224" />
+              <polyline className="trustAverageLine" points={chartPoints("averagePaymentUsd")} />
+              <polyline className="trustMedianLine" points={chartPoints("medianPaymentUsd")} />
+              {largest ? (
+                <g className="trustMaximum">
+                  <circle cx={largestX} cy={largestY} r="5" />
+                  <text x={Math.min(860, largestX + 13)} y={Math.max(32, largestY - 10)}>
+                    Largest {usd(largest.maxPaymentUsd ?? 0, true)}
+                  </text>
+                </g>
+              ) : null}
+              <text x="54" y="252">{series[0]?.date ?? data.coverageStart?.slice(0, 10)}</text>
+              <text x="946" y="252" textAnchor="end">{series.at(-1)?.date ?? data.coverageEnd?.slice(0, 10)}</text>
+            </svg>
+            <p className="trustScopeNote">{data.reason}</p>
           </div>
-          <div className="trustGateCopy">
-            <span>{PROTOCOL_LABELS[protocol]} · {period === 0 ? "all verified history" : `${period} days`}</span>
-            <strong>Not yet measured</strong>
-            <p>{data.reason}</p>
+        ) : (
+          <div className="trustAnticipation" role="img" aria-label={`Trust Barometer unavailable for ${PROTOCOL_LABELS[protocol]}. ${data.reason}`}>
+            <div className="trustScale" aria-hidden="true"><span>$10</span><span>$1</span><span>$0</span></div>
+            <div className="trustPlot" aria-hidden="true">
+              <i /><i /><i />
+              <span className="trustPendingLine" />
+            </div>
+            <div className="trustGateCopy">
+              <span>{PROTOCOL_LABELS[protocol]} · {period === 0 ? "all verified history" : `${period} days`}</span>
+              <strong>Not yet measured</strong>
+              <p>{data.reason}</p>
+            </div>
           </div>
-        </div>
+        )}
       </article>
 
       <div className="trustLadder" aria-label="Payment threshold ladder">
-        {thresholds.map((threshold, index) => (
-          <article className="trustRung unlit" key={threshold}>
+        {(metrics?.thresholds ?? [1, 10, 100, 1_000].map((amount) => ({ amount, count: 0, delta: null }))).map((threshold, index) => {
+          const measured = Boolean(metrics);
+          const hasActivity = measured && threshold.count > 0;
+          const visibleCount = hasActivity || threshold.amount <= 10 ? compact(threshold.count) : "—";
+          const zeroCaption = threshold.amount === 10
+            ? "No transaction above $10 recorded since tracking began."
+            : threshold.amount >= 100
+              ? "Awaiting first observation."
+              : "No transaction above $1 recorded in this period.";
+          return (
+          <article className={`trustRung ${hasActivity ? "lit" : "unlit"}`} key={threshold.amount}>
             <div><span>Rung {index + 1}</span><i aria-hidden="true" /></div>
-            <strong>{threshold}</strong>
-            <b>—</b>
+            <strong>${threshold.amount.toLocaleString()}+</strong>
+            <b>{measured ? visibleCount : "—"}</b>
             <span className="trustDashedBaseline" aria-hidden="true" />
-            <p>Coverage unavailable. Awaiting first defensible observation.</p>
+            <p>
+              {!measured
+                ? "Coverage unavailable. Awaiting first defensible observation."
+                : hasActivity
+                  ? `${compact(threshold.count)} qualifying payments in this period. Prior-period delta will appear after the next complete window.`
+                  : `${zeroCaption} 0 — ${metrics.daysSinceTracking} days and counting.`}
+            </p>
           </article>
-        ))}
+          );
+        })}
       </div>
     </section>
   );

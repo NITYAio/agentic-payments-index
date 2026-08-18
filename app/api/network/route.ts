@@ -73,6 +73,30 @@ type DailyRow = {
   seller_count: number;
 };
 
+type PublishedMetric = {
+  activityDate: string;
+  transactionCount: number;
+  volumeUsd: number;
+  buyerCount: number;
+  sellerCount: number;
+};
+
+type PublishedWindowMetric = {
+  rangeStart: string;
+  rangeEnd: string;
+  transactionCount: number;
+  volumeUsd: number;
+  buyerCount: number;
+  sellerCount: number;
+};
+
+type PublishedDirectSource = {
+  available: boolean;
+  requestedDays: number;
+  metrics: PublishedMetric[];
+  windowMetrics: PublishedWindowMetric[];
+};
+
 type MppService = Omit<Service, "protocol" | "network">;
 
 type X402Seller = {
@@ -249,21 +273,24 @@ function windowDurationDays(row: WindowRow) {
   );
 }
 
+function emptyDirectProtocol(protocol: ProtocolKey): ProtocolData {
+  return protocol === "mpp"
+    ? emptyProtocol(
+        "Tempo direct chain evidence",
+        "Current-version MPP charges and settled sessions observed directly on Tempo. Testing, internal activity, and repeated identities may still be included.",
+        "Protocol-attributed payments",
+        "Payment value",
+      )
+    : emptyProtocol(
+        "Base direct chain evidence",
+        "USDC payments involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once at the payer's original amount and are attributed to the terminal recipient.",
+        "Facilitator-associated payments",
+        "Payment value",
+      );
+}
+
 async function loadDirectProtocol(protocol: ProtocolKey): Promise<ProtocolData> {
-  const base =
-    protocol === "mpp"
-      ? emptyProtocol(
-          "Tempo direct chain evidence",
-          "Current-version MPP charges and settled sessions observed directly on Tempo. Testing, internal activity, and repeated identities may still be included.",
-          "Protocol-attributed payments",
-          "Payment value",
-        )
-      : emptyProtocol(
-          "Base direct chain evidence",
-          "USDC payments involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once at the payer's original amount and are attributed to the terminal recipient.",
-          "Facilitator-associated payments",
-          "Payment value",
-        );
+  const base = emptyDirectProtocol(protocol);
   const d1 = await getD1();
   const windowResult = await d1
     .prepare(
@@ -435,37 +462,67 @@ function isLocalPreview(request?: Request) {
   return hostname === "localhost" || hostname === "127.0.0.1";
 }
 
-async function loadPublishedSnapshot() {
-  const response = await fetch("https://agenticpaymentsindex.org/api/network", {
-    headers: {
-      accept: "application/json",
-      "user-agent": "agentic-payments-index-local-preview",
-    },
-  });
-  if (!response.ok) {
-    throw new Error(`Published network snapshot returned ${response.status}`);
+async function loadPublishedProtocol(protocol: ProtocolKey): Promise<ProtocolData> {
+  const base = emptyDirectProtocol(protocol);
+  const responses = await Promise.all(
+    DIRECT_PERIOD_KEYS.map(async (key) => {
+      const response = await fetch(
+        `https://agenticpaymentsindex.org/api/direct-source?protocol=${protocol}&days=${key}&preview=${Date.now()}`,
+        {
+          cache: "no-store",
+          headers: {
+            accept: "application/json",
+            "user-agent": "agentic-payments-index-local-preview",
+          },
+        },
+      );
+      if (!response.ok) {
+        throw new Error(`Published ${protocol} direct source returned ${response.status}`);
+      }
+      return [key, (await response.json()) as PublishedDirectSource] as const;
+    }),
+  );
+
+  for (const [key, payload] of responses) {
+    const metric = payload.windowMetrics[0];
+    if (!payload.available || !metric) continue;
+    const durationDays =
+      (new Date(metric.rangeEnd).getTime() - new Date(metric.rangeStart).getTime()) /
+      86_400_000;
+    if (key === "0" && durationDays <= 30) continue;
+    base.periods[key] = {
+      stats: {
+        totalTransactions: metric.transactionCount,
+        totalVolume: metric.volumeUsd,
+        uniqueSenders: metric.buyerCount,
+        uniqueRecipients: metric.sellerCount,
+      },
+      buckets: payload.metrics.map((daily) => ({
+        bucket_start: `${daily.activityDate}T00:00:00.000Z`,
+        total_transactions: daily.transactionCount,
+        total_volume: daily.volumeUsd,
+        unique_senders: daily.buyerCount,
+        unique_recipients: daily.sellerCount,
+      })),
+      rangeStart: metric.rangeStart,
+      rangeEnd: metric.rangeEnd,
+    };
+    base.live = true;
   }
-  return response.json();
+  return base;
 }
 
 export async function GET(request?: Request) {
   // The local D1 database is an isolated development copy and can legitimately
-  // lag production. Design previews should render the current published
-  // evidence while production continues to read its bound D1 database.
-  if (isLocalPreview(request)) {
-    try {
-      const snapshot = await loadPublishedSnapshot();
-      return Response.json(snapshot, {
-        headers: { "Cache-Control": "no-store" },
-      });
-    } catch {
-      // Keep local development usable offline by falling back to local D1.
-    }
-  }
+  // lag production. Local design previews reconstruct the current response from
+  // published direct-source evidence instead of proxying an older UI response.
+  const protocolLoader = isLocalPreview(request)
+    ? loadPublishedProtocol
+    : loadDirectProtocol;
 
   const [mppResult, x402Result, directoryResult] = await Promise.allSettled([
-    loadDirectProtocol("mpp"),
-    loadDirectProtocol("x402"),
+    protocolLoader("mpp"),
+    protocolLoader("x402"),
     loadServiceDirectories(),
   ]);
   const mpp =
@@ -492,8 +549,8 @@ export async function GET(request?: Request) {
   }
   const all = combineProtocols(mpp, x402);
   const rangeEnds = [
-    mpp.periods["0"].rangeEnd ?? mpp.periods["30"].rangeEnd,
-    x402.periods["0"].rangeEnd ?? x402.periods["30"].rangeEnd,
+    mpp.periods["30"].rangeEnd ?? mpp.periods["0"].rangeEnd,
+    x402.periods["30"].rangeEnd ?? x402.periods["0"].rangeEnd,
   ]
     .filter((value): value is string => Boolean(value))
     .sort();

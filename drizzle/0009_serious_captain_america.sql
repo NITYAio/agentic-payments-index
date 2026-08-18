@@ -1,0 +1,20 @@
+ALTER TABLE `daily_protocol_metrics` ADD `qualifying_payment_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `qualifying_volume_usd_micros` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `median_payment_usd_micros` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `max_payment_usd_micros` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `over_one_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `over_ten_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `over_hundred_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `over_thousand_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `excluded_zero_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `daily_protocol_metrics` ADD `excluded_self_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `qualifying_payment_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `qualifying_volume_usd_micros` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `median_payment_usd_micros` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `max_payment_usd_micros` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `over_one_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `over_ten_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `over_hundred_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `over_thousand_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `excluded_zero_count` integer DEFAULT 0 NOT NULL;--> statement-breakpoint
+ALTER TABLE `protocol_window_metrics` ADD `excluded_self_count` integer DEFAULT 0 NOT NULL;

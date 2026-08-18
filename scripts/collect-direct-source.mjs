@@ -16,6 +16,7 @@ import {
   parseDateRange,
   sha256Hex,
   splitUtcDateRange,
+  summarizeTrustPayments,
 } from "./lib/direct-source.mjs";
 
 const DEFAULT_TEMPO_RPC = "https://rpc.tempo.xyz";
@@ -332,6 +333,9 @@ async function collectMpp({ from, to, options }) {
   let acceptedSessionLogCount = 0;
   let windowChargeVolumeUsdMicros = 0;
   let windowSessionVolumeUsdMicros = 0;
+  const windowTrustAmounts = [];
+  let windowExcludedZeroCount = 0;
+  let windowExcludedSelfCount = 0;
   for (const range of dailyRanges) {
     const preferredChunk = Number.parseInt(options["chunk-size"] ?? "25000", 10);
     const [dailyLogs, sessionLogs] = await Promise.all([
@@ -370,6 +374,9 @@ async function collectMpp({ from, to, options }) {
     acceptedLogCount += dailyAggregate.acceptedLogCount;
     acceptedChargeLogCount += dailyAggregate.acceptedChargeLogCount;
     acceptedSessionLogCount += dailyAggregate.acceptedSessionLogCount;
+    windowTrustAmounts.push(...dailyAggregate.windowTrust.amounts);
+    windowExcludedZeroCount += dailyAggregate.windowTrust.excludedZeroCount;
+    windowExcludedSelfCount += dailyAggregate.windowTrust.excludedSelfCount;
     for (const identity of dailyAggregate.windowSets.buyers) windowBuyers.add(identity);
     for (const identity of dailyAggregate.windowSets.sellers) windowSellers.add(identity);
     windowChargeVolumeUsdMicros += dailyAggregate.metrics.reduce(
@@ -390,6 +397,11 @@ async function collectMpp({ from, to, options }) {
       "Counts current-version MPP charges in pathUSD and USDC.e plus TIP-1034 Settled session events; session value uses deltaPaid. " +
       "Active server identities are memo fingerprints observed on charges. NANOUSD, invalid or older memos, and off-chain vouchers not yet settled are excluded.",
   };
+  const windowTrust = summarizeTrustPayments(
+    windowTrustAmounts,
+    windowExcludedZeroCount,
+    windowExcludedSelfCount,
+  );
   return {
     sourceKey: "direct:mpp:tempo-attribution-rpc",
     protocol: "mpp",
@@ -414,6 +426,7 @@ async function collectMpp({ from, to, options }) {
       sessionVolumeUsdMicros: windowSessionVolumeUsdMicros,
       buyerCount: windowBuyers.size,
       sellerCount: windowSellers.size,
+      ...windowTrust,
       evidenceLevel: "deterministic",
       isAdjusted: false,
       limitation: template.limitation,

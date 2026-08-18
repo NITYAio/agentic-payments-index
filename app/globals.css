@@ -1844,6 +1844,70 @@ button {
   line-height: 1.6;
 }
 
+.trustLiveChart {
+  padding: 22px 28px 26px;
+}
+
+.trustLegend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 18px;
+  color: #8f817a;
+  font-size: 0.66rem;
+}
+
+.trustLegend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.trustLegend span:last-child { margin-left: auto; }
+.trustLegend i { width: 20px; border-top: 2px solid; }
+.trustLegend i.average { border-color: var(--orange); }
+.trustLegend i.median { border-color: var(--mint); border-top-style: dashed; }
+
+.trustLiveChart svg {
+  display: block;
+  width: 100%;
+  min-height: 310px;
+  margin-top: 12px;
+  overflow: visible;
+}
+
+.trustLiveChart svg line {
+  stroke: rgba(244, 239, 232, 0.09);
+  stroke-width: 1;
+}
+
+.trustLiveChart svg polyline {
+  fill: none;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.trustAverageLine { stroke: var(--orange); stroke-width: 2.5; }
+.trustMedianLine { stroke: var(--mint); stroke-width: 1.7; stroke-dasharray: 6 5; }
+.trustMaximum circle { fill: var(--cream); stroke: var(--orange); stroke-width: 2; }
+.trustMaximum text,
+.trustLiveChart svg > text {
+  fill: #887a73;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 12px;
+}
+.trustMaximum text { fill: var(--cream); }
+
+.trustScopeNote {
+  margin: 2px 0 0;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+  color: #8f817a;
+  font-size: 0.68rem;
+  line-height: 1.55;
+}
+
 .trustLadder {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -1882,6 +1946,14 @@ button {
 .trustRung > b { margin-top: 8px; color: #776b65; font-size: 2.7rem; font-weight: 400; }
 .trustDashedBaseline { display: block; margin: 16px 0; border-top: 1px dashed #443a36; }
 .trustRung > p { margin: 0; color: #746861; font-size: 0.65rem; line-height: 1.55; }
+.trustRung.lit {
+  border-style: solid;
+  border-color: rgba(255, 107, 61, 0.38);
+  background: rgba(255, 107, 61, 0.035);
+}
+.trustRung.lit > div i { border-color: var(--mint); background: var(--mint); box-shadow: 0 0 14px rgba(187, 255, 98, 0.28); }
+.trustRung.lit > strong { color: var(--cream); }
+.trustRung.lit > b { color: var(--orange); }
 
 .metrics {
   display: grid;

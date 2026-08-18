@@ -20,6 +20,16 @@ type MetricInput = {
   sessionVolumeUsdMicros?: unknown;
   buyerCount?: unknown;
   sellerCount?: unknown;
+  qualifyingPaymentCount?: unknown;
+  qualifyingVolumeUsdMicros?: unknown;
+  medianPaymentUsdMicros?: unknown;
+  maxPaymentUsdMicros?: unknown;
+  overOneCount?: unknown;
+  overTenCount?: unknown;
+  overHundredCount?: unknown;
+  overThousandCount?: unknown;
+  excludedZeroCount?: unknown;
+  excludedSelfCount?: unknown;
   evidenceLevel?: unknown;
   isAdjusted?: unknown;
   limitation?: unknown;
@@ -189,6 +199,19 @@ function parseMetric(value: unknown) {
     ),
     buyerCount: count(metric.buyerCount, "Buyer count"),
     sellerCount: count(metric.sellerCount, "Seller count"),
+    qualifyingPaymentCount: optionalCount(metric.qualifyingPaymentCount, "Qualifying payment count"),
+    qualifyingVolumeUsdMicros: optionalCount(
+      metric.qualifyingVolumeUsdMicros,
+      "Qualifying USD volume micros",
+    ),
+    medianPaymentUsdMicros: optionalCount(metric.medianPaymentUsdMicros, "Median payment micros"),
+    maxPaymentUsdMicros: optionalCount(metric.maxPaymentUsdMicros, "Maximum payment micros"),
+    overOneCount: optionalCount(metric.overOneCount, "Payments above one dollar"),
+    overTenCount: optionalCount(metric.overTenCount, "Payments above ten dollars"),
+    overHundredCount: optionalCount(metric.overHundredCount, "Payments above one hundred dollars"),
+    overThousandCount: optionalCount(metric.overThousandCount, "Payments above one thousand dollars"),
+    excludedZeroCount: optionalCount(metric.excludedZeroCount, "Excluded zero-value payments"),
+    excludedSelfCount: optionalCount(metric.excludedSelfCount, "Excluded self-payments"),
     evidenceLevel,
     isAdjusted: metric.isAdjusted,
     limitation: optionalText(metric.limitation, "Metric limitation", 2_000),
@@ -218,6 +241,16 @@ function parseWindowMetric(value: unknown) {
     sessionVolumeUsdMicros: parsed.sessionVolumeUsdMicros,
     buyerCount: parsed.buyerCount,
     sellerCount: parsed.sellerCount,
+    qualifyingPaymentCount: parsed.qualifyingPaymentCount,
+    qualifyingVolumeUsdMicros: parsed.qualifyingVolumeUsdMicros,
+    medianPaymentUsdMicros: parsed.medianPaymentUsdMicros,
+    maxPaymentUsdMicros: parsed.maxPaymentUsdMicros,
+    overOneCount: parsed.overOneCount,
+    overTenCount: parsed.overTenCount,
+    overHundredCount: parsed.overHundredCount,
+    overThousandCount: parsed.overThousandCount,
+    excludedZeroCount: parsed.excludedZeroCount,
+    excludedSelfCount: parsed.excludedSelfCount,
     evidenceLevel: parsed.evidenceLevel,
     isAdjusted: parsed.isAdjusted,
     limitation: parsed.limitation,
@@ -411,9 +444,13 @@ export async function POST(request: Request) {
                 transaction_count, charge_count, session_count, settlement_count, raw_transfer_count,
                 volume_usd_micros, recipient_volume_usd_micros, gross_volume_usd_micros,
                 charge_volume_usd_micros, session_volume_usd_micros,
-                buyer_count, seller_count, evidence_level, is_adjusted, limitation,
+                buyer_count, seller_count, qualifying_payment_count,
+                qualifying_volume_usd_micros, median_payment_usd_micros,
+                max_payment_usd_micros, over_one_count, over_ten_count,
+                over_hundred_count, over_thousand_count, excluded_zero_count,
+                excluded_self_count, evidence_level, is_adjusted, limitation,
                 created_at, updated_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                ON CONFLICT(run_id, activity_date, measurement_unit)
                DO UPDATE SET run_id = excluded.run_id,
                  transaction_count = excluded.transaction_count,
@@ -428,6 +465,16 @@ export async function POST(request: Request) {
                  session_volume_usd_micros = excluded.session_volume_usd_micros,
                  buyer_count = excluded.buyer_count,
                  seller_count = excluded.seller_count,
+                 qualifying_payment_count = excluded.qualifying_payment_count,
+                 qualifying_volume_usd_micros = excluded.qualifying_volume_usd_micros,
+                 median_payment_usd_micros = excluded.median_payment_usd_micros,
+                 max_payment_usd_micros = excluded.max_payment_usd_micros,
+                 over_one_count = excluded.over_one_count,
+                 over_ten_count = excluded.over_ten_count,
+                 over_hundred_count = excluded.over_hundred_count,
+                 over_thousand_count = excluded.over_thousand_count,
+                 excluded_zero_count = excluded.excluded_zero_count,
+                 excluded_self_count = excluded.excluded_self_count,
                  evidence_level = excluded.evidence_level,
                  is_adjusted = excluded.is_adjusted,
                  limitation = excluded.limitation,
@@ -453,6 +500,16 @@ export async function POST(request: Request) {
               metric.sessionVolumeUsdMicros,
               metric.buyerCount,
               metric.sellerCount,
+              metric.qualifyingPaymentCount,
+              metric.qualifyingVolumeUsdMicros,
+              metric.medianPaymentUsdMicros,
+              metric.maxPaymentUsdMicros,
+              metric.overOneCount,
+              metric.overTenCount,
+              metric.overHundredCount,
+              metric.overThousandCount,
+              metric.excludedZeroCount,
+              metric.excludedSelfCount,
               metric.evidenceLevel,
               metric.isAdjusted ? 1 : 0,
               metric.limitation,
@@ -482,8 +539,12 @@ export async function POST(request: Request) {
           settlement_count, raw_transfer_count, volume_usd_micros,
           recipient_volume_usd_micros, gross_volume_usd_micros, charge_volume_usd_micros,
           session_volume_usd_micros, buyer_count, seller_count, evidence_level,
-          is_adjusted, limitation, created_at, updated_at)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          qualifying_payment_count, qualifying_volume_usd_micros,
+          median_payment_usd_micros, max_payment_usd_micros, over_one_count,
+          over_ten_count, over_hundred_count, over_thousand_count,
+          excluded_zero_count, excluded_self_count, is_adjusted, limitation,
+          created_at, updated_at)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
          ON CONFLICT(source_key, protocol, network, range_start, range_end, measurement_unit)
          DO UPDATE SET run_id = excluded.run_id,
            transaction_count = excluded.transaction_count,
@@ -498,6 +559,16 @@ export async function POST(request: Request) {
            session_volume_usd_micros = excluded.session_volume_usd_micros,
            buyer_count = excluded.buyer_count,
            seller_count = excluded.seller_count,
+           qualifying_payment_count = excluded.qualifying_payment_count,
+           qualifying_volume_usd_micros = excluded.qualifying_volume_usd_micros,
+           median_payment_usd_micros = excluded.median_payment_usd_micros,
+           max_payment_usd_micros = excluded.max_payment_usd_micros,
+           over_one_count = excluded.over_one_count,
+           over_ten_count = excluded.over_ten_count,
+           over_hundred_count = excluded.over_hundred_count,
+           over_thousand_count = excluded.over_thousand_count,
+           excluded_zero_count = excluded.excluded_zero_count,
+           excluded_self_count = excluded.excluded_self_count,
            evidence_level = excluded.evidence_level,
            is_adjusted = excluded.is_adjusted,
            limitation = excluded.limitation,
@@ -525,6 +596,16 @@ export async function POST(request: Request) {
         windowSummary.buyerCount,
         windowSummary.sellerCount,
         windowSummary.evidenceLevel,
+        windowSummary.qualifyingPaymentCount,
+        windowSummary.qualifyingVolumeUsdMicros,
+        windowSummary.medianPaymentUsdMicros,
+        windowSummary.maxPaymentUsdMicros,
+        windowSummary.overOneCount,
+        windowSummary.overTenCount,
+        windowSummary.overHundredCount,
+        windowSummary.overThousandCount,
+        windowSummary.excludedZeroCount,
+        windowSummary.excludedSelfCount,
         windowSummary.isAdjusted ? 1 : 0,
         windowSummary.limitation,
         now,

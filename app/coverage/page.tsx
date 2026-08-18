@@ -116,14 +116,20 @@ export default function CoveragePage() {
 
       <section className="reconciliationNote" id="trust-barometer-method">
         <span className="sectionNumber">Trust Barometer methodology</span>
-        <h2>Ticket size will publish only after the commerce filter is auditable.</h2>
+        <h2>MPP ticket size is measured. x402 remains outside the result for now.</h2>
         <p>
           The Trust Barometer excludes free calls, token mints, self-transfers,
           and speculative transfers. It counts reconstructed payments once at
           their final recipient, then calculates the average, median, largest
-          observation, and threshold counts. Until those classifications are
-          stored and independently testable, the Index shows an evidence gate—
-          never a zero or a third-party benchmark presented as our own result.
+          observation, and threshold counts. Verified MPP evidence is available
+          for rolling 7- and 30-day windows. The combined view clearly labels
+          this MPP-only scope until x402 terminal-payment history can be processed
+          with the same reproducible rules.
+        </p>
+        <p>
+          The 90-day and all-history views remain evidence-gated while older MPP
+          records are reprocessed. The Index never presents a missing observation,
+          or a third-party benchmark, as its own measured result.
         </p>
         <p>
           “Agent ticket size” is a market shorthand and a trust proxy. A payment
