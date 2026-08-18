@@ -1030,7 +1030,10 @@ function TrustBarometer({
   const series = metrics?.series.filter(
     (row) => row.averagePaymentUsd !== null && row.medianPaymentUsd !== null,
   ) ?? [];
-  const yMax = Math.max(1, ...series.map((row) => row.maxPaymentUsd ?? 0));
+  const yMax = Math.max(
+    0.01,
+    ...series.flatMap((row) => [row.averagePaymentUsd ?? 0, row.medianPaymentUsd ?? 0]),
+  ) * 1.12;
   const chartPoints = (key: "averagePaymentUsd" | "medianPaymentUsd") =>
     series
       .map((row, index) => {
@@ -1046,7 +1049,6 @@ function TrustBarometer({
   );
   const largest = series[largestIndex];
   const largestX = series.length < 2 ? 500 : 54 + (largestIndex / Math.max(1, series.length - 1)) * 892;
-  const largestY = largest ? 224 - ((largest.maxPaymentUsd ?? 0) / yMax) * 176 : 224;
   return (
     <section className="trustBarometer" id="trust-barometer">
       <div className="trustHeader">
@@ -1105,13 +1107,17 @@ function TrustBarometer({
               <line x1="54" y1="48" x2="946" y2="48" />
               <line x1="54" y1="136" x2="946" y2="136" />
               <line x1="54" y1="224" x2="946" y2="224" />
+              <text className="trustAxisLabel" x="47" y="52" textAnchor="end">{usd(yMax, true)}</text>
+              <text className="trustAxisLabel" x="47" y="140" textAnchor="end">{usd(yMax / 2, true)}</text>
+              <text className="trustAxisLabel" x="47" y="228" textAnchor="end">$0</text>
               <polyline className="trustAverageLine" points={chartPoints("averagePaymentUsd")} />
               <polyline className="trustMedianLine" points={chartPoints("medianPaymentUsd")} />
               {largest ? (
                 <g className="trustMaximum">
-                  <circle cx={largestX} cy={largestY} r="5" />
-                  <text x={Math.min(860, largestX + 13)} y={Math.max(32, largestY - 10)}>
-                    Largest {usd(largest.maxPaymentUsd ?? 0, true)}
+                  <line className="trustOutlierRail" x1="54" y1="24" x2="946" y2="24" />
+                  <circle cx={largestX} cy="24" r="5" />
+                  <text x={Math.min(760, largestX + 13)} y="18">
+                    Largest observed {usd(largest.maxPaymentUsd ?? 0, true)} · outlier, not to scale
                   </text>
                 </g>
               ) : null}

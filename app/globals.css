@@ -1890,6 +1890,10 @@ button {
 
 .trustAverageLine { stroke: var(--orange); stroke-width: 2.5; }
 .trustMedianLine { stroke: var(--mint); stroke-width: 1.7; stroke-dasharray: 6 5; }
+.trustLiveChart svg line.trustOutlierRail {
+  stroke: rgba(255, 107, 61, 0.32);
+  stroke-dasharray: 4 5;
+}
 .trustMaximum circle { fill: var(--cream); stroke: var(--orange); stroke-width: 2; }
 .trustMaximum text,
 .trustLiveChart svg > text {
@@ -1898,6 +1902,7 @@ button {
   font-size: 12px;
 }
 .trustMaximum text { fill: var(--cream); }
+.trustLiveChart svg > text.trustAxisLabel { font-size: 10px; }
 
 .trustScopeNote {
   margin: 2px 0 0;
