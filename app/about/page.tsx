@@ -30,11 +30,15 @@ export default function AboutPage() {
       <section className="editorialGrid">
         <article>
           <span>01 / Founder</span>
-          <h2>Nityanand Sharma</h2>
+          <h2>Nitya Sharma</h2>
           <p>
-            Nityanand is the founder of Simpl. He built The Agentic Payments
+            Nitya is the founder of Simpl. He built The Agentic Payments
             Index as an independent side project for operators, investors,
             researchers, protocol teams, and journalists.
+          </p>
+          <p className="founderLinks">
+            <a href="https://x.com/nsharma0813" target="_blank" rel="noreferrer">X ↗</a>
+            <a href="https://www.linkedin.com/in/nityasharma1/" target="_blank" rel="noreferrer">LinkedIn ↗</a>
           </p>
         </article>
         <article>
@@ -74,7 +78,7 @@ export default function AboutPage() {
       </section>
 
       <footer className="editorialFooter">
-        <span>Built openly by Nityanand Sharma</span>
+        <span>Built openly by Nitya Sharma</span>
         <a href="/">Back to the live index →</a>
       </footer>
     </main>

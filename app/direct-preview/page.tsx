@@ -210,7 +210,7 @@ export default function DirectPreview() {
       {loading && !error ? <section className="directPreviewState">Loading verified evidence…</section> : null}
       {days === 0 && data?.available && !loading && !data.windowMetrics.some((metric) => metric.protocol === "x402") ? (
         <section className="directPreviewState">
-          MPP history is available. x402 and combined all-time views remain unavailable
+          MPP History is available. x402 and combined History views remain unavailable
           until terminal-recipient identity history is complete.
         </section>
       ) : null}

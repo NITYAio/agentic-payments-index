@@ -74,6 +74,15 @@ type DirectoryData = {
   asOf: string;
 };
 
+type TrustBarometerData = {
+  available: boolean;
+  status: "verified" | "unavailable";
+  coverageStart: string | null;
+  coverageEnd: string | null;
+  reason: string;
+  methodology: string;
+};
+
 type SubmissionResult = {
   id: string;
   serviceName: string;
@@ -134,7 +143,14 @@ const PERIODS = [
   { days: 1 as const, label: "24h", disabled: false },
   { days: 7 as const, label: "7d", disabled: false },
   { days: 30 as const, label: "30d", disabled: false },
-  { days: 0 as const, label: "All", disabled: false },
+  { days: 0 as const, label: "History", disabled: false },
+];
+
+const TRUST_PERIODS = [
+  { days: 7 as const, label: "7d" },
+  { days: 30 as const, label: "30d" },
+  { days: 90 as const, label: "90d" },
+  { days: 0 as const, label: "All" },
 ];
 
 const QUESTIONS = [
@@ -201,6 +217,16 @@ const EMPTY_DIRECTORY: DirectoryData = {
   asOf: "",
 };
 
+const EMPTY_TRUST_BAROMETER: TrustBarometerData = {
+  available: false,
+  status: "unavailable",
+  coverageStart: null,
+  coverageEnd: null,
+  reason:
+    "Agent-commerce classification is being validated. No threshold is published until free calls, mints, self-transfers, and speculative flows can be removed reproducibly.",
+  methodology: "/coverage#trust-barometer-method",
+};
+
 const PROTOCOL_LABELS: Record<ProtocolKey, string> = {
   all: "MPP + x402",
   mpp: "MPP",
@@ -226,6 +252,34 @@ function usd(value: number, precise = false) {
 
 function compactUsd(value: number) {
   return value >= 1000 ? `$${compact(value)}` : usd(value);
+}
+
+function freshnessFor(
+  data: ExplorerData,
+  protocol: ProtocolKey,
+  period: 0 | 1 | 7 | 30,
+) {
+  const key = String(period) as "0" | "1" | "7" | "30";
+  const ends =
+    protocol === "all"
+      ? [data.protocols.mpp.periods[key].rangeEnd, data.protocols.x402.periods[key].rangeEnd]
+      : [data.protocols[protocol].periods[key].rangeEnd];
+  const timestamps = ends
+    .filter((value): value is string => Boolean(value))
+    .map((value) => new Date(value).getTime())
+    .filter(Number.isFinite);
+  if (!timestamps.length) {
+    return { label: "Data unavailable", shortLabel: "Unavailable", className: "statusUnavailable", exact: "No completed source window" };
+  }
+  const oldest = new Date(Math.min(...timestamps)).toISOString();
+  const ageMinutes = Math.max(0, (Date.now() - new Date(oldest).getTime()) / 60_000);
+  if (ageMinutes <= 90) {
+    return { label: `Live · updated ${relativeTime(oldest)}`, shortLabel: `Live · ${relativeTime(oldest)}`, className: "statusLive", exact: `Updated through ${exactTime(oldest)} UTC` };
+  }
+  if (ageMinutes <= 12 * 60) {
+    return { label: `Delayed · updated ${relativeTime(oldest)}`, shortLabel: `Delayed · ${relativeTime(oldest)}`, className: "statusDelayed", exact: `Oldest included protocol updated through ${exactTime(oldest)} UTC` };
+  }
+  return { label: `Stale · updated ${relativeTime(oldest)}`, shortLabel: `Stale · ${relativeTime(oldest)}`, className: "statusStale", exact: `Oldest included protocol updated through ${exactTime(oldest)} UTC` };
 }
 
 function relativeTime(dateString: string) {
@@ -438,23 +492,6 @@ function answerQuestion(
       text.includes("spend");
     const mppValue = compareVolume ? mpp.totalVolume : mpp.totalTransactions;
     const x402Value = compareVolume ? x402.totalVolume : x402.totalTransactions;
-    if (compareVolume) {
-      return {
-        eyebrow: `Value comparison · ${periodLabel}`,
-        value: "Not directly comparable",
-        change: null,
-        comparison: `MPP payment value ${usd(mppValue)} · x402 payment value ${usd(x402Value)}`,
-        formula: "Values shown separately; no combined share",
-        explanation:
-          "MPP is protocol-attributed payment value. x402 counts each reconstructed payer-to-terminal-recipient chain once at the payer's original amount. Totals remain separate because protocol and network coverage differ.",
-        days,
-        metric: "volume",
-        protocol,
-        limited: true,
-        status: "Different measurement units",
-        visualization: "none",
-      };
-    }
     const total = mppValue + x402Value;
     const leader = x402Value >= mppValue ? "x402" : "MPP";
     const leaderValue = Math.max(x402Value, mppValue);
@@ -468,7 +505,9 @@ function answerQuestion(
         ? `MPP ${usd(mppValue)} · x402 ${usd(x402Value)}`
         : `MPP ${compact(mppValue)} · x402 ${compact(x402Value)}`,
       explanation:
-        "Both protocols use the same exact rolling window and are reconstructed from direct chain evidence.",
+        compareVolume
+          ? "Both protocols use the same exact rolling window. MPP value and terminal-recipient-normalized x402 value are summed at protocol level."
+          : "Both protocols use the same exact rolling window and are reconstructed from direct chain evidence.",
       days,
       metric: compareVolume ? "volume" : "transactions",
       protocol,
@@ -479,29 +518,12 @@ function answerQuestion(
     (text.includes("average") || text.includes("avg") || text.includes("size")) &&
     (text.includes("transaction") || text.includes("payment"))
   ) {
-    if (protocol === "all") {
-      return {
-        eyebrow: `Average value · ${periodLabel}`,
-        value: "Not combined",
-        change: null,
-        comparison: "Select MPP or x402 to inspect its protocol-specific average.",
-        formula: "No combined numerator or denominator",
-        explanation:
-          "MPP and x402 payment values use protocol-specific attribution rules, so select a protocol for its average.",
-        days,
-        metric: "average",
-        protocol,
-        limited: true,
-        status: "Different measurement units",
-        visualization: "none",
-      };
-    }
     const value = current.totalVolume / current.totalTransactions;
     const benchmark = baseline
       ? baseline.totalVolume / baseline.totalTransactions
       : null;
     return {
-      eyebrow: `${protocol === "mpp" ? "Average MPP payment" : "Average x402 payment"} · ${periodLabel}`,
+      eyebrow: `${protocol === "all" ? "Average observed payment" : protocol === "mpp" ? "Average MPP payment" : "Average x402 payment"} · ${periodLabel}`,
       value: usd(value, true),
       change: benchmark === null ? null : percentageDelta(value, benchmark),
       comparison: comparisonLabel
@@ -509,7 +531,9 @@ function answerQuestion(
         : "aggregate average for the selected period",
       formula: `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} transactions`,
       explanation:
-        protocol === "mpp"
+        protocol === "all"
+          ? "This divides the combined MPP and x402 value by their combined reconstructed payment count. The same address may appear in both protocols."
+          : protocol === "mpp"
           ? "This is identified MPP payment value divided by qualifying payments."
           : "This is payer-originated USDC payment value divided by reconstructed x402 payments. Receive-and-forward chains count once.",
       days,
@@ -602,25 +626,6 @@ function answerQuestion(
     text.includes("usd") ||
     text.includes("dollar")
   ) {
-    if (protocol === "all") {
-      const mpp = data.protocols.mpp.periods[String(days) as "0" | "1" | "7" | "30"].stats;
-      const x402 = data.protocols.x402.periods[String(days) as "0" | "1" | "7" | "30"].stats;
-      return {
-        eyebrow: `Value measurements · ${periodLabel}`,
-        value: "Not combined",
-        change: null,
-        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 payment value ${usd(x402.totalVolume)}`,
-        formula: "Values shown separately; no combined total",
-        explanation:
-          "MPP and x402 are reconstructed with protocol-specific methods. The Index keeps totals separate because coverage differs across protocols and networks.",
-        days,
-        metric: "volume",
-        protocol,
-        limited: true,
-        status: "Different measurement units",
-        visualization: "none",
-      };
-    }
     const divisor = periodDays(days, protocolData.periods[String(days) as "0" | "1" | "7" | "30"].buckets);
     const daily = current.totalVolume / divisor;
     const baselineDaily =
@@ -628,7 +633,7 @@ function answerQuestion(
         ? baseline.totalVolume / comparisonDays
         : null;
     return {
-      eyebrow: `${protocol === "mpp" ? "MPP payment value" : "x402 payment value"} · ${periodLabel}`,
+      eyebrow: `${protocol === "all" ? "Combined payment value" : protocol === "mpp" ? "MPP payment value" : "x402 payment value"} · ${periodLabel}`,
       value: usd(current.totalVolume),
       change:
         baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
@@ -637,7 +642,9 @@ function answerQuestion(
         : "total observed volume in the selected period",
       formula: `${compact(current.totalTransactions)} payments settled in the period`,
       explanation:
-        protocol === "mpp"
+        protocol === "all"
+          ? "This sums independently reconstructed MPP value on Tempo and terminal-recipient-normalized x402 value on Base for the same rolling window."
+          : protocol === "mpp"
           ? "This is identified MPP payment value observed directly on Tempo."
           : "This is payer-originated USDC value for reconstructed x402 payments involving the maintained facilitator set on Base. Routing chains count once and resolve to the terminal recipient.",
       days,
@@ -979,6 +986,90 @@ function paginationWindow(current: number, total: number) {
     .sort((left, right) => left - right);
 }
 
+function TrustBarometer({
+  data,
+  period,
+  protocol,
+  onPeriodChange,
+}: {
+  data: TrustBarometerData;
+  period: 0 | 7 | 30 | 90;
+  protocol: ProtocolKey;
+  onPeriodChange: (next: 0 | 7 | 30 | 90) => void;
+}) {
+  const thresholds = ["$1+", "$10+", "$100+", "$1,000+"];
+  return (
+    <section className="trustBarometer" id="trust-barometer">
+      <div className="trustHeader">
+        <div>
+          <span className="sectionNumber">Trust Barometer</span>
+          <h2>Volume measures activity.<br /><em>Ticket size measures trust.</em></h2>
+        </div>
+        <div className="trustHeaderAside">
+          <div className="periodControl trustPeriod" aria-label="Trust Barometer time period">
+            {TRUST_PERIODS.map((item) => (
+              <button
+                key={item.days}
+                className={period === item.days ? "active" : ""}
+                onClick={() => onPeriodChange(item.days)}
+                aria-pressed={period === item.days}
+              >
+                {item.label}
+              </button>
+            ))}
+          </div>
+          <p>
+            Free-tier calls excluded. Computed on agent-commerce volume only—mints,
+            self-transfers, and speculative flows removed.{" "}
+            <a href={data.methodology}>See methodology ↗</a>
+          </p>
+        </div>
+      </div>
+
+      <article className="trustHeroChart" aria-label="Average and median qualifying payment size">
+        <div className="trustChartHead">
+          <div>
+            <InfoTerm
+              label="Average agent ticket size"
+              definition="A proxy for the amount of economic trust expressed by qualifying machine-native commerce payments. It does not prove an autonomous agent made every payment."
+              formula="Qualifying payment value ÷ qualifying payments, after excluded activity is removed."
+              example="A routed payment is counted once at its terminal-recipient amount."
+            />
+            <strong>{data.available ? "Loading verified series" : "Awaiting verified classification"}</strong>
+          </div>
+          <span className={data.available ? "trustVerified" : "trustEvidenceGate"}>
+            {data.available ? "Verified" : "Evidence gate"}
+          </span>
+        </div>
+        <div className="trustAnticipation" role="img" aria-label={`Trust Barometer unavailable for ${PROTOCOL_LABELS[protocol]}. ${data.reason}`}>
+          <div className="trustScale" aria-hidden="true"><span>$10</span><span>$1</span><span>$0</span></div>
+          <div className="trustPlot" aria-hidden="true">
+            <i /><i /><i />
+            <span className="trustPendingLine" />
+          </div>
+          <div className="trustGateCopy">
+            <span>{PROTOCOL_LABELS[protocol]} · {period === 0 ? "all verified history" : `${period} days`}</span>
+            <strong>Not yet measured</strong>
+            <p>{data.reason}</p>
+          </div>
+        </div>
+      </article>
+
+      <div className="trustLadder" aria-label="Payment threshold ladder">
+        {thresholds.map((threshold, index) => (
+          <article className="trustRung unlit" key={threshold}>
+            <div><span>Rung {index + 1}</span><i aria-hidden="true" /></div>
+            <strong>{threshold}</strong>
+            <b>—</b>
+            <span className="trustDashedBaseline" aria-hidden="true" />
+            <p>Coverage unavailable. Awaiting first defensible observation.</p>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function ViewToggle({
   machineMode,
   onChange,
@@ -1022,9 +1113,13 @@ export default function Home() {
   const [answerRevision, setAnswerRevision] = useState(0);
   const [justAnswered, setJustAnswered] = useState(false);
   const [shareStatus, setShareStatus] = useState("");
-  const [sort, setSort] = useState<"transactions" | "volume" | "buyers">(
+  const [sort, setSort] = useState<"transactions" | "volume" | "buyers" | "latest">(
     "transactions",
   );
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [trustPeriod, setTrustPeriod] = useState<0 | 7 | 30 | 90>(30);
+  const [trustData, setTrustData] = useState<TrustBarometerData>(EMPTY_TRUST_BAROMETER);
   const [directory, setDirectory] =
     useState<DirectoryData>(EMPTY_DIRECTORY);
   const [directoryLoading, setDirectoryLoading] = useState(true);
@@ -1067,6 +1162,24 @@ export default function Home() {
   }, []);
 
   useEffect(() => {
+    let active = true;
+    fetch(`/api/trust-barometer?days=${trustPeriod}&protocol=${protocol}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Trust data request failed");
+        return response.json();
+      })
+      .then((nextData: TrustBarometerData) => {
+        if (active) setTrustData(nextData);
+      })
+      .catch(() => {
+        if (active) setTrustData(EMPTY_TRUST_BAROMETER);
+      });
+    return () => {
+      active = false;
+    };
+  }, [protocol, trustPeriod]);
+
+  useEffect(() => {
     const parameters = new URLSearchParams(window.location.search);
     const sharedQuestion = parameters.get("q")?.trim();
     if (!sharedQuestion) return;
@@ -1107,6 +1220,7 @@ export default function Home() {
       pageSize: "20",
       sort,
     });
+    if (serviceQuery.trim()) parameters.set("q", serviceQuery.trim());
     fetch(`/api/services?${parameters.toString()}`)
       .then((response) => {
         if (!response.ok) throw new Error("Directory request failed");
@@ -1128,7 +1242,7 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [period, protocol, servicePage, sort]);
+  }, [period, protocol, servicePage, serviceQuery, sort]);
 
   const selectedKey = String(period) as "0" | "1" | "7" | "30";
   const selectedProtocolData = data.protocols[protocol];
@@ -1141,8 +1255,8 @@ export default function Home() {
     protocol === "mpp"
       ? "MPP history is still loading"
       : protocol === "x402"
-        ? "x402 all-time identity history is still being backfilled"
-        : "Combined all-time data will unlock after x402 identity history is complete";
+        ? "x402 History is still being backfilled"
+        : "Combined History will unlock after x402 history is complete";
   const fallbackAnswer = useMemo(
     () => answerQuestion(data, submittedQuestion, protocol),
     [data, submittedQuestion, protocol],
@@ -1179,6 +1293,13 @@ export default function Home() {
   const x402Selected = data.protocols.x402.periods[selectedKey].stats;
   const combinedTransactions =
     mppSelected.totalTransactions + x402Selected.totalTransactions;
+  const freshness = freshnessFor(data, protocol, period);
+
+  function searchServices(event: FormEvent) {
+    event.preventDefault();
+    setServicePage(1);
+    setServiceQuery(serviceSearch.trim());
+  }
 
   function protocolHasAllTime(nextProtocol: ProtocolKey) {
     const nextPeriod = data.protocols[nextProtocol].periods["0"];
@@ -1350,7 +1471,7 @@ export default function Home() {
   if (machineMode) {
     const machinePayload = {
       index: "the-agentic-payments-index",
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       asOf: data.asOf || null,
       selectedView: {
         protocol,
@@ -1374,10 +1495,11 @@ export default function Home() {
       endpoints: {
         network: "/api/network",
         directory:
-          `/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}`,
+          `/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}${serviceQuery ? `&q=${encodeURIComponent(serviceQuery)}` : ""}`,
         manifest: "/api/agent",
         ask: "/api/ask",
         walletRegistry: "/api/wallets",
+        trustBarometer: `/api/trust-barometer?protocol=${protocol}&days=${trustPeriod}`,
         submitService: "/api/submissions",
       },
     };
@@ -1415,6 +1537,27 @@ export default function Home() {
               stable fields, declared sources, visible freshness, and coverage
               limits that travel with the number.
             </p>
+            <div className="machineControls" aria-label="API snapshot controls">
+              <div className="protocolTabs">
+                {(["all", "mpp", "x402"] as ProtocolKey[]).map((item) => (
+                  <button key={item} className={protocol === item ? "active" : ""} onClick={() => selectProtocol(item)}>
+                    {item === "all" ? "All" : item.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="periodControl">
+                {PERIODS.map((item) => (
+                  <button
+                    key={item.days}
+                    className={period === item.days ? "active" : ""}
+                    disabled={item.days === 0 && !allTimeAvailable}
+                    onClick={() => setPeriod(item.days)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="machineEndpointList">
               <a href="/api/network" target="_blank">
                 GET /api/network <span>↗</span>
@@ -1441,10 +1584,14 @@ export default function Home() {
           </div>
           <div className="machineConsole">
             <div className="machineConsoleHead">
-              <span>index.snapshot.json</span>
+              <span>GET /api/network · {protocol} · {period === 0 ? "history" : period === 1 ? "24h" : `${period}d`}</span>
               <span className={data.live ? "machineHealthy" : ""}>
                 {data.live ? "200 OK" : "503 SOURCE UNAVAILABLE"}
               </span>
+            </div>
+            <div className="machineConsoleActions">
+              <button onClick={() => void navigator.clipboard.writeText(JSON.stringify(machinePayload, null, 2))}>Copy JSON</button>
+              <a href="/api/network" target="_blank">Open endpoint ↗</a>
             </div>
             <pre>{JSON.stringify(machinePayload, null, 2)}</pre>
           </div>
@@ -1502,7 +1649,7 @@ export default function Home() {
           </span>
             <span className="brandCopy">
               <span>THE AGENTIC PAYMENTS INDEX</span>
-              <small>Independent Tempo + Base observations</small>
+              <small>MPP on Tempo · x402 on Base</small>
           </span>
         </a>
         <div className="navLinks">
@@ -1512,18 +1659,10 @@ export default function Home() {
           <a href="/about">About</a>
           <a href="#methodology">Methodology</a>
         </div>
-        <div
-          className="status"
-          title={data.asOf ? `Updated through ${exactTime(data.asOf)} UTC` : undefined}
-        >
-          <span
-            className={selectedProtocolData.live ? "liveDot" : "previewDot"}
-          />
-          {loading
-            ? "Connecting"
-            : selectedProtocolData.live
-              ? `Near real-time · ${relativeTime(data.asOf)}`
-              : "Data unavailable"}
+        <div className={`status ${freshness.className}`} title={freshness.exact}>
+          <span className={loading ? "previewDot" : "liveDot"} />
+          <span className="statusLong">{loading ? "Connecting" : freshness.label}</span>
+          <span className="statusShort">{loading ? "Connecting" : freshness.shortLabel}</span>
         </div>
       </nav>
 
@@ -1548,7 +1687,7 @@ export default function Home() {
       <section className="hero" id="top">
         <div className="heroCopy">
           <div className="kicker">
-            <span>Stablecoin payments intelligence</span>
+            <span>Machine-native payments intelligence</span>
             <i />
             <span>{PROTOCOL_LABELS[protocol]}</span>
           </div>
@@ -1730,14 +1869,14 @@ export default function Home() {
                 label={selectedProtocolData.volumeLabel}
                 definition={
                   protocol === "all"
-                    ? "MPP and x402 payment values are shown separately because they cover different protocols and networks."
+                    ? "The sum of independently reconstructed MPP value on Tempo and terminal-recipient-normalized x402 value on Base for the same selected period."
                     : protocol === "mpp"
                       ? "The value of current-version MPP charges and settled sessions observed directly on Tempo."
                       : "Payer-originated USDC payment value involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once and resolve to the final recipient."
                 }
                 formula={
                   protocol === "all"
-                    ? "Shown separately by protocol; no combined dollar total."
+                    ? "MPP payment value + terminal-recipient-normalized x402 payment value."
                     : "Sum of the directly observed values in the exact rolling window."
                 }
                 example={
@@ -1748,16 +1887,12 @@ export default function Home() {
               />
               <strong>
                 {selectedProtocolData.live
-                  ? selectedProtocolData.volumeComparable
-                    ? compactUsd(selected.stats.totalVolume)
-                    : "Not combined"
+                  ? compactUsd(selected.stats.totalVolume)
                   : "—"}
               </strong>
               <small>
                 {selectedProtocolData.live
-                  ? selectedProtocolData.volumeComparable
-                    ? `${usd(average, true)} average per observed record`
-                    : "Different measurement units"
+                  ? `${usd(average, true)} average per observed record`
                   : "Connecting to index"}
               </small>
             </article>
@@ -1784,7 +1919,7 @@ export default function Home() {
               <small>
                 {selectedProtocolData.live
                   ? protocol === "all"
-                    ? "Protocol-level sum"
+                    ? "May overlap across protocols"
                     : "Distinct payer addresses"
                   : "Connecting to index"}
               </small>
@@ -1801,7 +1936,7 @@ export default function Home() {
                   ? compact(selected.stats.uniqueRecipients)
                   : "—"}
               </strong>
-              <small>{protocol === "all" ? "Protocol-level sum" : "Active recipients"}</small>
+              <small>{protocol === "all" ? "May overlap across protocols" : "Active recipients"}</small>
             </article>
           </div>
 
@@ -1814,7 +1949,7 @@ export default function Home() {
                   formula="Count of qualifying records per time bucket under each protocol's published method."
                   example="Taller bars indicate more qualifying records during that bucket, not higher dollar value."
                 />
-                <small>{period === 0 ? `Available indexed history since ${coverageStart(selected.buckets)}` : period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
+                <small>{period === 0 ? `Verified history since ${coverageStart(selected.buckets)}` : period === 1 ? "Hourly activity · past 24 hours" : `Daily activity · past ${period} days`}</small>
               </div>
               <div className="chartLegend" aria-label="Chart legend">
                 {(protocol === "all" || protocol === "mpp") && <span><i className="legendMpp" />MPP</span>}
@@ -1836,6 +1971,13 @@ export default function Home() {
 
         </aside>
       </section>
+
+      <TrustBarometer
+        data={trustData}
+        period={trustPeriod}
+        protocol={protocol}
+        onPeriodChange={setTrustPeriod}
+      />
 
       <section className="indexDefinition" id="coverage">
         <div className="definitionLead">
@@ -1916,38 +2058,30 @@ export default function Home() {
           />
           <MetricCard
             label={selectedProtocolData.volumeLabel}
-            value={
-              selectedProtocolData.volumeComparable
-                ? compactUsd(selected.stats.totalVolume)
-                : "Not combined"
-            }
-            note={
-              selectedProtocolData.volumeComparable
-                ? `${usd(average, true)} average per record`
-                : "MPP and x402 shown separately"
-            }
+            value={compactUsd(selected.stats.totalVolume)}
+            note={`${usd(average, true)} average payment`}
             definition={
               protocol === "all"
-                ? "MPP and x402 payment values are shown separately because their protocol and network coverage differs."
+                ? "The sum of independently reconstructed MPP payment value and terminal-recipient-normalized x402 payment value for the same rolling window."
                 : protocol === "mpp"
                   ? "Value of current-version MPP charges and settled sessions observed directly on Tempo."
                   : "Payer-originated USDC payment value involving the maintained x402 facilitator set on Base; receive-and-forward chains count once."
             }
             formula={
               protocol === "all"
-                ? "No combined value is calculated."
+                ? "MPP payment value + terminal-normalized x402 payment value."
                 : "Sum of directly observed value in the exact rolling window."
             }
             example={
               protocol === "all"
-                ? `MPP ${usd(mppSelected.totalVolume)} · x402 ${usd(x402Selected.totalVolume)}`
+                ? `${usd(mppSelected.totalVolume)} MPP + ${usd(x402Selected.totalVolume)} x402 = ${usd(selected.stats.totalVolume)}.`
                 : `Observed value: ${usd(selected.stats.totalVolume)}.`
             }
           />
           <MetricCard
             label="Active payer addresses"
             value={compact(selected.stats.uniqueSenders)}
-            note={protocol === "all" ? "Protocol-level sum" : "Unique senders"}
+            note={protocol === "all" ? "May overlap across protocols" : "Unique senders"}
             definition={
               protocol === "all"
                 ? "The sum of distinct payer addresses reported by MPP and x402. Cross-protocol identity is not deduplicated."
@@ -1965,7 +2099,7 @@ export default function Home() {
             value={compact(selected.stats.uniqueRecipients)}
             note={
               protocol === "all"
-                ? "Protocol-level sum; not companies"
+                ? "May overlap across protocols"
                 : "Distinct active recipients"
             }
             definition="Distinct network-normalized recipient addresses that received at least one observed payment in the selected window. These are not servers, companies, or necessarily distinct services."
@@ -1980,7 +2114,7 @@ export default function Home() {
               <div>
                 <InfoTerm
                   label="Protocol share"
-                  definition="Each protocol's portion of combined observed record counts for the same time window. Dollar values are not compared because their measurement units differ."
+                  definition="Each protocol's portion of combined observed record counts for the same rolling time window."
                   formula="Protocol record count ÷ combined MPP and x402 record count × 100."
                   example="If MPP has 40 qualifying records and x402 has 60, their activity shares are 40% and 60%."
                 />
@@ -2011,14 +2145,14 @@ export default function Home() {
                 </b>
               </div>
               <div className="shareRow valueSeparationRow">
-                <span>Value measurements</span>
+                <span>Payment value</span>
                 <div className="separateValues" aria-label="Protocol value measurements shown separately">
                   <i className="legendMpp" />
                   <b>MPP payment value {usd(mppSelected.totalVolume)}</b>
                   <i className="legendX402" />
                   <b>x402 payment value {usd(x402Selected.totalVolume)}</b>
                 </div>
-                <small>Not combined</small>
+                <small>Combined {usd(selected.stats.totalVolume)}</small>
               </div>
             </div>
           </div>
@@ -2065,41 +2199,13 @@ export default function Home() {
           </article>
 
           <article className="signalPanel">
-            {protocol === "all" ? (
-              <>
                 <span className="signalLabel">
                   <InfoTerm
-                    label="Value measurements"
-                    definition="MPP and x402 payment values are reconstructed independently and kept separate because their coverage differs."
-                    formula="Values are shown separately; no combined total or average is calculated."
-                    example={`MPP ${usd(mppSelected.totalVolume)} · x402 ${usd(x402Selected.totalVolume)}`}
-                  />
-                </span>
-                <strong>Not combined</strong>
-                <p>Comparable activity counts; distinct value definitions.</p>
-                <div className="signalRule" />
-                <dl>
-                  <div>
-                    <dt>MPP payment value</dt>
-                    <dd>{usd(mppSelected.totalVolume)}</dd>
-                  </div>
-                  <div>
-                    <dt>x402 payment value</dt>
-                    <dd>{usd(x402Selected.totalVolume)}</dd>
-                  </div>
-                  <div>
-                    <dt>Data window</dt>
-                    <dd>{periodLabel(period)}</dd>
-                  </div>
-                </dl>
-              </>
-            ) : (
-              <>
-                <span className="signalLabel">
-                  <InfoTerm
-                    label={protocol === "mpp" ? "Average MPP payment size" : "Average x402 payment size"}
+                    label={protocol === "all" ? "Average payment size" : protocol === "mpp" ? "Average MPP payment size" : "Average x402 payment size"}
                     definition={
-                      protocol === "mpp"
+                      protocol === "all"
+                        ? "Combined MPP and x402 payment value divided by their combined qualifying payment count. Protocol totals remain visible in the calculation."
+                        : protocol === "mpp"
                         ? "The mean identified MPP payment value in the selected window."
                         : "The mean payer-originated USDC value per reconstructed x402 payment. Receive-and-forward chains count once."
                     }
@@ -2108,7 +2214,7 @@ export default function Home() {
                   />
                 </span>
                 <strong>{usd(average, true)}</strong>
-                <p>{protocol === "mpp" ? "Average identified MPP payment." : "Average reconstructed x402 payment."}</p>
+                <p>{protocol === "all" ? "Average across both measured protocols." : protocol === "mpp" ? "Average identified MPP payment." : "Average reconstructed x402 payment."}</p>
                 <div className="signalRule" />
                 <dl>
                   <div>
@@ -2124,8 +2230,6 @@ export default function Home() {
                     <dd>{periodLabel(period)}</dd>
                   </div>
                 </dl>
-              </>
-            )}
           </article>
         </div>
       </section>
@@ -2219,6 +2323,25 @@ export default function Home() {
           </div>
         </div>
 
+        <div className="directoryTools">
+          <div className="directoryView" aria-label="Recipient directory view">
+            <button className="active">Named services</button>
+            <button disabled title="The address-level recipient directory will unlock after the direct identity index is production-ready.">All recipients</button>
+          </div>
+          <form className="directorySearch" onSubmit={searchServices} role="search">
+            <label className="srOnly" htmlFor="service-search">Search named services</label>
+            <input
+              id="service-search"
+              type="search"
+              value={serviceSearch}
+              onChange={(event) => setServiceSearch(event.target.value)}
+              placeholder="Search name, domain, or address"
+            />
+            <button type="submit">Search</button>
+            {serviceQuery && <button type="button" onClick={() => { setServiceSearch(""); setServiceQuery(""); setServicePage(1); }}>Clear</button>}
+          </form>
+        </div>
+
         <div className="directorySummary">
           <div>
             <span>Indexed service records</span>
@@ -2285,7 +2408,14 @@ export default function Home() {
                     Payer addresses {sort === "buyers" ? "↓" : ""}
                   </button>
                 </th>
-                <th>Latest</th>
+                <th>
+                  <button
+                    className={sort === "latest" ? "sortActive" : ""}
+                    onClick={() => { setSort("latest"); setServicePage(1); }}
+                  >
+                    Latest {sort === "latest" ? "↓" : ""}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>

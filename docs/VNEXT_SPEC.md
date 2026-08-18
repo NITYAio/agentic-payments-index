@@ -1,7 +1,7 @@
 # The Agentic Payments Index — vNext specification
 
 Status: approved for implementation  
-Owner: Nityanand Sharma  
+Owner: Nitya Sharma
 Updated: 2026-08-07
 
 ## Product promise
@@ -136,7 +136,7 @@ The source of truth is direct read-only indexing from Tempo and supported x402 s
 
 Direct-chain 24-hour, 7-day, and 30-day results are live in public beta after
 contract coverage, decoding, and reconciliation tests. MPP available history
-is live from 16 February 2026. x402 and combined all-time views remain disabled
+is live from 16 February 2026. x402 and combined History views remain disabled
 until independently reconstructed terminal-recipient identity history is complete.
 
 ## Open source, IP, and API
@@ -145,7 +145,7 @@ until independently reconstructed terminal-recipient identity history is complet
 - The public repository contains contribution, methodology, security, and data-source guidance.
 - Public read-only endpoints remain free in vNext. A paid API may later add higher limits, exports, alerts, or SLAs; underlying facts and methodology are not paywalled by default.
 - A separate data licence must be chosen before distributing a bulk derived dataset.
-- The About page names Nityanand Sharma, founder of Simpl, states why the Index exists, and routes corrections and methodology debate into public GitHub issues and Discussions.
+- The About page names Nitya Sharma, founder of Simpl, states why the Index exists, and routes corrections and methodology debate into public GitHub issues and Discussions.
 - `DATA.md` defines source eligibility, provenance, overlap, terms, and correction requirements. Issue forms turn source and methodology contributions into an auditable relationship history.
 - A concise monthly note records what changed, what the data does and does not prove, and the next open research questions.
 

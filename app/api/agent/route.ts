@@ -25,7 +25,7 @@ export async function GET(request: Request) {
         network: {
           url: `${origin}/api/network`,
           description:
-            "Direct-source exact rolling 24h, 7d, and 30d aggregates and time-series buckets. MPP all-time history is available; x402 and combined all-time history remain evidence-gated.",
+            "Direct-source exact rolling 24h, 7d, and 30d aggregates and time-series buckets. MPP History is available; x402 and combined History remain evidence-gated.",
         },
         services: {
           url: `${origin}/api/services`,

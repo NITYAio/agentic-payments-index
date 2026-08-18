@@ -351,9 +351,9 @@ function mergeBuckets(sources: Bucket[][]): Bucket[] {
         unique_recipients: 0,
       };
       current.total_transactions += bucket.total_transactions;
+      current.total_volume += bucket.total_volume;
       current.unique_senders += bucket.unique_senders;
       current.unique_recipients += bucket.unique_recipients;
-      current.total_volume = 0;
       merged.set(key, current);
     }
   }
@@ -397,7 +397,7 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
         {
           stats: {
             totalTransactions: left.stats.totalTransactions + right.stats.totalTransactions,
-            totalVolume: 0,
+            totalVolume: left.stats.totalVolume + right.stats.totalVolume,
             uniqueSenders: left.stats.uniqueSenders + right.stats.uniqueSenders,
             uniqueRecipients: left.stats.uniqueRecipients + right.stats.uniqueRecipients,
           },
@@ -420,10 +420,10 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
     source: "Independent Tempo + Base observations",
     live: mpp.live || x402.live,
     disclosure:
-      "Transaction and identity counts are protocol-level sums and may overlap. MPP and x402 payment values are each directly reconstructed, but market totals remain separate because protocol and network coverage differ.",
+      "Payment value adds independently reconstructed MPP value on Tempo and terminal-recipient-normalized x402 value on Base. Address counts add each protocol's reported count and may overlap.",
     measurementLabel: "Observed MPP + x402 activity",
-    volumeLabel: "Not combined",
-    volumeComparable: false,
+    volumeLabel: "Payment value",
+    volumeComparable: true,
     periods,
     services,
   };

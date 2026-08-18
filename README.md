@@ -7,7 +7,7 @@ stablecoin payments. It combines MPP and x402 activity, makes resolved services
 browsable across every source page, and answers analytical questions with the
 formula, provenance, and material coverage limitation attached.
 
-Created by **Nityanand Sharma, founder of Simpl**, as an independent side
+Created by **Nitya Sharma, founder of Simpl**, as an independent side
 project for operators, investors, researchers, protocol teams, and journalists.
 Read the public [About page](https://agenticpaymentsindex.org/about) and
 [protocol coverage map](https://agenticpaymentsindex.org/coverage).
@@ -15,7 +15,7 @@ Read the public [About page](https://agenticpaymentsindex.org/about) and
 ## What the index publishes
 
 - Exact rolling 24-hour, 7-day, and 30-day direct-source aggregates.
-- MPP history from 16 February 2026 onward; x402 and combined all-time views
+- MPP History from 16 February 2026 onward; x402 and combined History views
   remain visibly unavailable until terminal-recipient identity history is complete.
 - MPP and x402 views plus a clearly disclosed combined view.
 - Complete paginated resolved-service directories for the selected window.

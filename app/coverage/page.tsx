@@ -114,6 +114,23 @@ export default function CoveragePage() {
         <a href="https://github.com/NITYAio/agentic-payments-index/issues/new/choose" target="_blank" rel="noreferrer">Submit a missing source or protocol ↗</a>
       </section>
 
+      <section className="reconciliationNote" id="trust-barometer-method">
+        <span className="sectionNumber">Trust Barometer methodology</span>
+        <h2>Ticket size will publish only after the commerce filter is auditable.</h2>
+        <p>
+          The Trust Barometer excludes free calls, token mints, self-transfers,
+          and speculative transfers. It counts reconstructed payments once at
+          their final recipient, then calculates the average, median, largest
+          observation, and threshold counts. Until those classifications are
+          stored and independently testable, the Index shows an evidence gate—
+          never a zero or a third-party benchmark presented as our own result.
+        </p>
+        <p>
+          “Agent ticket size” is a market shorthand and a trust proxy. A payment
+          rail alone does not prove that an autonomous agent initiated a payment.
+        </p>
+      </section>
+
       <footer className="editorialFooter">
         <span>All site timestamps use UTC</span>
         <a href="/">Back to the live index →</a>
