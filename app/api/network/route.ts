@@ -429,7 +429,40 @@ function combineProtocols(mpp: ProtocolData, x402: ProtocolData): ProtocolData {
   };
 }
 
-export async function GET() {
+function isLocalPreview(request?: Request) {
+  if (!request) return false;
+  const hostname = new URL(request.url).hostname;
+  return hostname === "localhost" || hostname === "127.0.0.1";
+}
+
+async function loadPublishedSnapshot() {
+  const response = await fetch("https://agenticpaymentsindex.org/api/network", {
+    headers: {
+      accept: "application/json",
+      "user-agent": "agentic-payments-index-local-preview",
+    },
+  });
+  if (!response.ok) {
+    throw new Error(`Published network snapshot returned ${response.status}`);
+  }
+  return response.json();
+}
+
+export async function GET(request?: Request) {
+  // The local D1 database is an isolated development copy and can legitimately
+  // lag production. Design previews should render the current published
+  // evidence while production continues to read its bound D1 database.
+  if (isLocalPreview(request)) {
+    try {
+      const snapshot = await loadPublishedSnapshot();
+      return Response.json(snapshot, {
+        headers: { "Cache-Control": "no-store" },
+      });
+    } catch {
+      // Keep local development usable offline by falling back to local D1.
+    }
+  }
+
   const [mppResult, x402Result, directoryResult] = await Promise.allSettled([
     loadDirectProtocol("mpp"),
     loadDirectProtocol("x402"),
