@@ -113,6 +113,15 @@ function percent(value: number) {
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
 }
 
+function monthName(month: string | null) {
+  if (!month) return null;
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
+}
+
 function percentageDelta(value: number, baseline: number) {
   if (!baseline) return null;
   return ((value - baseline) / baseline) * 100;
@@ -293,6 +302,38 @@ async function answerQuestion(
         source: `Agentic Payments Index identity layer${cohort.sources.length ? ` (${cohort.sources.join(", ")})` : ""}`,
       };
     }
+
+    const requestedMonth = request.cohortMonth;
+    const beforeCoverage = Boolean(
+      requestedMonth && cohort?.coverageStart && requestedMonth < cohort.coverageStart,
+    );
+    const afterCompleteCoverage = Boolean(
+      requestedMonth && cohort?.completeThrough && requestedMonth > cohort.completeThrough,
+    );
+    if (requestedMonth && cohort && (beforeCoverage || afterCompleteCoverage)) {
+      const requestedLabel = monthName(requestedMonth);
+      const coverageStartLabel = monthName(cohort.coverageStart);
+      const completeThroughLabel = monthName(cohort.completeThrough);
+      return {
+        ...common,
+        eyebrow: `${seller ? "Service" : "Buyer"} cohort retention · available coverage`,
+        value: beforeCoverage
+          ? `Available from ${coverageStartLabel}`
+          : `Complete through ${completeThroughLabel}`,
+        change: null,
+        comparison: `${requestedLabel} is outside the verified identity history currently available for ${label}.`,
+        formula: seller
+          ? "Verified service identity × cohort month × returning-active month"
+          : "Hashed protocol identity × cohort month × returning-active month",
+        explanation: beforeCoverage
+          ? `Ask for a cohort from ${coverageStartLabel} through ${completeThroughLabel}. The Index will not estimate retention for earlier months from incomplete identity history.`
+          : `The latest complete cohort month is ${completeThroughLabel}. The current partial month is excluded until the full month has finished.`,
+        metric: seller ? "servers" : "buyers",
+        limited: true,
+        status: "Outside verified coverage",
+        visualization: "none",
+      };
+    }
     return {
       ...common,
       eyebrow: `${seller ? "Service" : "Payer"} cohort retention · collector status`,
@@ -304,9 +345,11 @@ async function answerQuestion(
       formula: seller
         ? "Verified service identity × cohort month × returning-active month"
         : "Hashed protocol identity × cohort month × returning-active month",
-      explanation: cohort?.limitation
-        ? "The Index will not calculate retention from recipient addresses known to include routing contracts. This result will unlock after terminal-recipient identity history is complete."
-        : `The storage, privacy-preserving identity normalization, idempotent ingestion, and cohort calculation layers are ready. A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified MPP receipt or x402 settlement history has been backfilled; rolling aggregate counts remain excluded.`,
+      explanation:
+        seller && protocol !== "mpp" && cohort?.limitation
+          ? "The Index will not calculate retention from recipient addresses known to include routing contracts. This result will unlock after terminal-recipient identity history is complete."
+          : cohort?.limitation ??
+            `A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified identity history has been backfilled; rolling aggregate counts remain excluded.`,
       metric: seller ? "servers" : "buyers",
       limited: true,
       status: "Backfill required",
