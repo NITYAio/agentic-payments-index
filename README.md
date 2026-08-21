@@ -74,7 +74,7 @@ The service endpoint accepts:
 
 ## Local development
 
-Requirements: Node.js `>=22.13.0`.
+Requirements: Node.js `>=24.0.0`.
 
 ```bash
 npm install
