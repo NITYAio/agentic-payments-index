@@ -17,8 +17,14 @@ type CoverageRow = {
 
 type SourceRow = { source_key: string };
 
-const X402_TERMINAL_IDENTITY_SOURCE =
-  "identity:x402:base-usdc:cdp-sql:terminal-recipient-v1";
+const X402_TERMINAL_IDENTITY_SOURCES = [
+  "identity:x402:base-usdc:cdp-sql:terminal-recipient-v1",
+  "identity:x402:base-usdc:blockscout:terminal-recipient-v1",
+  "identity:x402:base-usdc:rpc-trace:terminal-recipient-v1",
+  "identity:x402:base-usdc:rpc-events:terminal-recipient-v1",
+  "identity:x402:base-usdc:x402scan-index:terminal-recipient-v1",
+  "identity:x402:base-usdc:substreams-pulse-v3.3.0",
+] as const;
 
 type SnapshotRunRow = {
   id: string;
@@ -143,10 +149,10 @@ export async function loadCohortMatrix(
       .prepare(
         `SELECT 1 AS available
          FROM identity_ingestion_segments
-         WHERE source_key = ? AND status = 'complete'
+         WHERE source_key IN (?, ?, ?, ?, ?, ?) AND status = 'complete'
          LIMIT 1`,
       )
-      .bind(X402_TERMINAL_IDENTITY_SOURCE)
+      .bind(...X402_TERMINAL_IDENTITY_SOURCES)
       .first<{ available: number }>();
     if (!correctedCoverage) {
       return {

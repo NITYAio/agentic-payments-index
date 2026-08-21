@@ -16,6 +16,19 @@ import {
   splitUtcDateRange,
   x402TerminalIdentityActivities,
 } from "./lib/direct-source.mjs";
+import {
+  blockRangeForDates,
+  collectX402BaseRpcChunk,
+  createBudgetSafeRpcClient,
+} from "./lib/x402-base-rpc.mjs";
+import { collectX402BaseEventRange } from "./lib/x402-base-events.mjs";
+import {
+  blockscoutBlockForTime,
+  blockscoutTransactionReceipt,
+  blockscoutTransactionsForAddress,
+  collectX402BlockscoutTransactions,
+  createBudgetSafeBlockscoutClient,
+} from "./lib/x402-base-blockscout.mjs";
 
 const DEFAULT_TEMPO_RPC = "https://rpc.tempo.xyz";
 const CDP_HOST = "api.cdp.coinbase.com";
@@ -29,6 +42,7 @@ function argumentsFrom(values) {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value === "--no-ingest") options.noIngest = true;
+    else if (value === "--prefer-tempo-derived") options.preferTempoDerived = true;
     else if (value.startsWith("--")) {
       const next = values[index + 1];
       if (!next || next.startsWith("--")) throw new Error(`${value} requires a value.`);
@@ -191,6 +205,271 @@ async function collectX402(from, to, options) {
       transferClassification: "ordered-receive-forward-terminal-v1",
     })),
     activities: mergeActivities(activities),
+  };
+}
+
+function resolvedBaseRpcUrl(options) {
+  const explicit = options.preferTempoDerived
+    ? null
+    : options["rpc-url"] ?? process.env.BASE_RPC_URL;
+  if (explicit) return explicit;
+  const tempoUrl = process.env.TEMPO_RPC_URL;
+  if (!tempoUrl) {
+    throw new Error(
+      "BASE_RPC_URL is required for x402 RPC collection (or TEMPO_RPC_URL must use a dRPC Tempo endpoint).",
+    );
+  }
+  const derived = new URL(tempoUrl);
+  if (!derived.pathname.includes("/tempo-mainnet/")) {
+    throw new Error("BASE_RPC_URL is required because the configured Tempo URL cannot be safely converted.");
+  }
+  derived.pathname = derived.pathname.replace("/tempo-mainnet/", "/base-mainnet/");
+  return derived.toString();
+}
+
+async function collectX402Rpc(from, to, options) {
+  const registry = await loadRegistry(options.registry);
+  const rpcUrl = resolvedBaseRpcUrl(options);
+  const concurrency = Number.parseInt(options["rpc-concurrency"] ?? "2", 10);
+  const preferredChunk = Number.parseInt(options["trace-chunk-size"] ?? "20", 10);
+  const delayMs = Number.parseInt(options["rpc-delay-ms"] ?? "125", 10);
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 12) {
+    throw new Error("--rpc-concurrency must be an integer between 1 and 12.");
+  }
+  if (!Number.isSafeInteger(preferredChunk) || preferredChunk < 1 || preferredChunk > 10_000) {
+    throw new Error("--trace-chunk-size must be an integer between 1 and 10000.");
+  }
+  if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 10_000) {
+    throw new Error("--rpc-delay-ms must be an integer between 0 and 10000.");
+  }
+  const clients = Array.from({ length: concurrency }, () =>
+    createBudgetSafeRpcClient({ url: rpcUrl, minDelayMs: delayMs }),
+  );
+  const dateRanges = [];
+  for (const window of splitUtcDateRange(from, to)) {
+    const blocks = await blockRangeForDates(clients[0], window.from, window.to);
+    const facilitatorAddresses = registry.addresses
+      .filter((entry) => new Date(`${entry.firstSeen}T00:00:00.000Z`) < window.to)
+      .map((entry) => entry.address.toLowerCase());
+    dateRanges.push({
+      activityTimestamp: window.from.toISOString(),
+      fromBlock: blocks.fromBlock,
+      toBlockExclusive: blocks.toBlockExclusive,
+      facilitatorAddresses,
+    });
+  }
+  const chunks = dateRanges.flatMap((range) => {
+    const values = [];
+    for (let start = range.fromBlock; start < range.toBlockExclusive; start += preferredChunk) {
+      values.push({
+        ...range,
+        fromBlock: start,
+        toBlockExclusive: Math.min(range.toBlockExclusive, start + preferredChunk),
+      });
+    }
+    return values;
+  });
+  const activities = [];
+  let nextIndex = 0;
+  let traceCount = 0;
+  let transactionCount = 0;
+  let directTransactionCount = 0;
+  let receiptFallbackCount = 0;
+  let transferCount = 0;
+  const startedAt = Date.now();
+  async function worker(workerIndex) {
+    while (nextIndex < chunks.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const chunk = chunks[index];
+      const result = await collectX402BaseRpcChunk({
+        rpc: clients[workerIndex],
+        fromBlock: chunk.fromBlock,
+        toBlockExclusive: chunk.toBlockExclusive,
+        facilitatorAddresses: chunk.facilitatorAddresses,
+        timestamp: chunk.activityTimestamp,
+        verifyDirectReceipts: index < 10 ? 1 : 0,
+      });
+      activities.push(...result.activities);
+      traceCount += result.traceCount;
+      transactionCount += result.transactionCount;
+      directTransactionCount += result.directTransactionCount;
+      receiptFallbackCount += result.receiptFallbackCount;
+      transferCount += result.transferCount;
+      if ((index + 1) % 25 === 0 || index + 1 === chunks.length) {
+        const elapsedMinutes = Math.max((Date.now() - startedAt) / 60_000, 1 / 60);
+        process.stderr.write(
+          `Collected x402 Base RPC chunks ${index + 1}/${chunks.length} ` +
+            `(${(index + 1) / elapsedMinutes < 10 ? "" : "~"}${Math.round((index + 1) / elapsedMinutes)}/min)\n`,
+        );
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, (_, index) => worker(index)));
+  return {
+    sourceKey: "identity:x402:base-usdc:rpc-trace:terminal-recipient-v1",
+    protocol: "x402",
+    network: "base",
+    evidenceType: "confirmed_chain",
+    queryHash: sha256Hex(JSON.stringify({
+      provider: new URL(rpcUrl).host,
+      from,
+      to,
+      chunks: chunks.map((chunk) => [chunk.fromBlock, chunk.toBlockExclusive]),
+      facilitatorAddresses: registry.addresses.map((entry) => entry.address.toLowerCase()),
+      transferClassification: "ordered-receive-forward-terminal-v1",
+      calldataSelector: "0xe3ee160e",
+      receiptFallback: true,
+    })),
+    collection: {
+      chunks: chunks.length,
+      traceCount,
+      transactionCount,
+      directTransactionCount,
+      receiptFallbackCount,
+      transferCount,
+    },
+    activities: mergeActivities(activities),
+  };
+}
+
+async function collectX402Events(from, to, options) {
+  const registry = await loadRegistry(options.registry);
+  const rpcUrl = resolvedBaseRpcUrl(options);
+  const preferredChunk = Number.parseInt(options["event-chunk-size"] ?? "10000", 10);
+  const blockBatchSize = Number.parseInt(options["block-batch-size"] ?? "3", 10);
+  const delayMs = Number.parseInt(options["rpc-delay-ms"] ?? "75", 10);
+  const concurrency = Number.parseInt(options["rpc-concurrency"] ?? "3", 10);
+  const maxAttempts = Number.parseInt(options["rpc-max-attempts"] ?? "8", 10);
+  if (!Number.isSafeInteger(preferredChunk) || preferredChunk < 1 || preferredChunk > 100_000) {
+    throw new Error("--event-chunk-size must be an integer between 1 and 100000.");
+  }
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 12) {
+    throw new Error("--rpc-concurrency must be an integer between 1 and 12.");
+  }
+  if (!Number.isSafeInteger(blockBatchSize) || blockBatchSize < 1 || blockBatchSize > 25) {
+    throw new Error("--block-batch-size must be an integer between 1 and 25.");
+  }
+  if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 10_000) {
+    throw new Error("--rpc-delay-ms must be an integer between 0 and 10000.");
+  }
+  if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 12) {
+    throw new Error("--rpc-max-attempts must be an integer between 1 and 12.");
+  }
+  const blockRpcs = Array.from({ length: concurrency }, () =>
+    createBudgetSafeRpcClient({ url: rpcUrl, minDelayMs: delayMs, maxAttempts }),
+  );
+  const rpc = blockRpcs[0];
+  const blocks = await blockRangeForDates(rpc, from, to);
+  const result = await collectX402BaseEventRange({
+    rpc,
+    blockRpcs,
+    fromBlock: blocks.fromBlock,
+    toBlockExclusive: blocks.toBlockExclusive,
+    facilitatorRegistry: registry.addresses,
+    preferredChunk,
+    blockBatchSize,
+    tokenAddress: registry.tokenAddress,
+  });
+  return {
+    sourceKey: "identity:x402:base-usdc:rpc-events:terminal-recipient-v1",
+    protocol: "x402",
+    network: "base",
+    evidenceType: "confirmed_chain",
+    queryHash: sha256Hex(JSON.stringify({
+      provider: new URL(rpcUrl).host,
+      from,
+      to,
+      blockRange: [blocks.fromBlock, blocks.toBlockExclusive],
+      rpcConcurrency: concurrency,
+      blockBatchSize,
+      rpcMaxAttempts: maxAttempts,
+      detector: "authorization-proxy-batch-events-v1",
+      transferClassification: "ordered-receive-forward-terminal-v1",
+    })),
+    collection: result,
+    activities: mergeActivities(result.activities),
+  };
+}
+
+async function collectX402Blockscout(from, to, options) {
+  const registry = await loadRegistry(options.registry);
+  const blockscoutRequest = createBudgetSafeBlockscoutClient({
+    baseUrl: options["blockscout-url"] ?? "https://base.blockscout.com/api",
+    minStartDelayMs: Number.parseInt(options["blockscout-delay-ms"] ?? "750", 10),
+  });
+  const concurrency = Number.parseInt(options["blockscout-concurrency"] ?? "2", 10);
+  if (!Number.isSafeInteger(concurrency) || concurrency < 1 || concurrency > 6) {
+    throw new Error("--blockscout-concurrency must be an integer between 1 and 6.");
+  }
+  const [startBlock, endBlockExclusive] = await Promise.all([
+    blockscoutBlockForTime(blockscoutRequest, from, "after"),
+    blockscoutBlockForTime(blockscoutRequest, to, "after"),
+  ]);
+  // txlist accepts a complete block interval and paginates it. Querying every
+  // facilitator once per day multiplied requests without adding evidence: each
+  // returned row already carries its timestamp and block number. Keep the
+  // collection range-wide, and let the paginator split only saturated ranges.
+  const jobs = registry.addresses
+    .filter((entry) => new Date(`${entry.firstSeen}T00:00:00.000Z`) < to)
+    .map((entry) => ({
+      from,
+      to,
+      startBlock,
+      endBlock: endBlockExclusive - 1,
+      address: entry.address.toLowerCase(),
+    }));
+  const transactions = new Map();
+  let nextIndex = 0;
+  let completed = 0;
+  async function worker() {
+    while (nextIndex < jobs.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      const job = jobs[index];
+      const rows = await blockscoutTransactionsForAddress({
+        request: blockscoutRequest,
+        address: job.address,
+        startBlock: job.startBlock,
+        endBlock: job.endBlock,
+      });
+      for (const transaction of rows) transactions.set(transaction.hash, transaction);
+      completed += 1;
+      if (completed % 50 === 0 || completed === jobs.length) {
+        process.stderr.write(
+          `Collected x402 Blockscout facilitator ranges ${completed}/${jobs.length}; ` +
+            `${transactions.size.toLocaleString()} unique transactions\n`,
+        );
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: concurrency }, () => worker()));
+  const result = await collectX402BlockscoutTransactions({
+    transactions: [...transactions.values()],
+    receiptLoader: (transactionHash) =>
+      blockscoutTransactionReceipt(blockscoutRequest, transactionHash),
+    tokenAddress: registry.tokenAddress,
+  });
+  return {
+    sourceKey: "identity:x402:base-usdc:blockscout:terminal-recipient-v1",
+    protocol: "x402",
+    network: "base",
+    evidenceType: "confirmed_chain",
+    queryHash: sha256Hex(JSON.stringify({
+      provider: new URL(options["blockscout-url"] ?? "https://base.blockscout.com/api").host,
+      from,
+      to,
+      blockRange: [startBlock, endBlockExclusive],
+      facilitatorAddresses: registry.addresses.map((entry) => entry.address.toLowerCase()),
+      transferClassification: "ordered-receive-forward-terminal-v1",
+      transactionLogFallback: "blockscout-gettxinfo",
+    })),
+    collection: {
+      facilitatorRanges: jobs.length,
+      ...result,
+      activities: undefined,
+    },
+    activities: mergeActivities(result.activities),
   };
 }
 
@@ -385,7 +664,13 @@ async function main() {
   const summaries = [];
   for (const range of calendarMonthRanges(from, to)) {
     const result = options.protocol === "x402"
-      ? await collectX402(range.from, range.to, options)
+      ? options.source === "events"
+        ? await collectX402Events(range.from, range.to, options)
+        : options.source === "rpc"
+        ? await collectX402Rpc(range.from, range.to, options)
+        : options.source === "blockscout"
+          ? await collectX402Blockscout(range.from, range.to, options)
+          : await collectX402(range.from, range.to, options)
       : await collectMpp(range.from, range.to, options);
     const segments = makeSegments(result, range.from, range.to);
     const label = `${options.protocol}-${range.from.toISOString().slice(0, 10)}_${range.to.toISOString().slice(0, 10)}`;
@@ -393,7 +678,15 @@ async function main() {
     const ingestion = [];
     for (const segment of segments) ingestion.push(await ingestSegment(segment, options));
     allFiles.push(...files);
-    summaries.push({ month: range.month, activities: result.activities.length, segments: segments.length, ingestion });
+    summaries.push({
+      month: range.month,
+      activities: result.activities.length,
+      segments: segments.length,
+      collection: result.collection
+        ? { ...result.collection, activities: undefined }
+        : undefined,
+      ingestion,
+    });
   }
   const manifestPath = resolve(
     outputDir,

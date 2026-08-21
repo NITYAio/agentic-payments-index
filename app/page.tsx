@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useMemo, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 
 type Stats = {
   totalTransactions: number;
@@ -30,6 +30,13 @@ type Service = {
     volume: number;
     buyers: number;
     latestTx: string;
+  };
+  buyerConcentration?: {
+    topBuyerShare: number;
+    top3BuyerShare: number;
+    top10BuyerShare: number;
+    activeBuyers: number;
+    evidenceStatus: "verified" | "pending";
   };
 };
 
@@ -328,6 +335,17 @@ function exactTime(dateString: string) {
     timeStyle: "short",
     timeZone: "UTC",
   }).format(new Date(dateString));
+}
+
+function trustChartDate(dateString: string) {
+  const parsed = new Date(`${dateString.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) return dateString;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
 }
 
 function drawWrappedText(
@@ -1015,6 +1033,62 @@ function paginationWindow(current: number, total: number) {
     .sort((left, right) => left - right);
 }
 
+function BuyerConcentrationDisclosure({
+  concentration,
+}: {
+  concentration: NonNullable<Service["buyerConcentration"]>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 16, top: 16 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const disclosureId = useId();
+  const percent = (value: number) => `${(value * 100).toFixed(value * 100 < 10 ? 1 : 0)}%`;
+
+  function placeDisclosure() {
+    const bounds = triggerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const width = 276;
+    setPosition({
+      left: Math.max(12, Math.min(window.innerWidth - width - 12, bounds.right - width)),
+      top: bounds.bottom + 8,
+    });
+  }
+
+  return (
+    <span
+      className={`buyerConcentration ${open ? "open" : ""}`}
+      onPointerEnter={placeDisclosure}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls={disclosureId}
+        onFocus={placeDisclosure}
+        onClick={() => {
+          placeDisclosure();
+          setOpen((current) => !current);
+        }}
+      >
+        {percent(concentration.top10BuyerShare)}
+        <span aria-hidden="true">ⓘ</span>
+      </button>
+      <span
+        className="buyerConcentrationPopover"
+        id={disclosureId}
+        role="tooltip"
+        style={position}
+      >
+        <strong>Buyer concentration</strong>
+        <span><i>Top buyer share</i><b>{percent(concentration.topBuyerShare)}</b></span>
+        <span><i>Top 3 buyer share</i><b>{percent(concentration.top3BuyerShare)}</b></span>
+        <span><i>Top 10 buyer share</i><b>{percent(concentration.top10BuyerShare)}</b></span>
+        <span><i>Total active buyers</i><b>{compact(concentration.activeBuyers)}</b></span>
+      </span>
+    </span>
+  );
+}
+
 function TrustBarometer({
   data,
   period,
@@ -1026,6 +1100,7 @@ function TrustBarometer({
   protocol: ProtocolKey;
   onPeriodChange: (next: 0 | 7 | 30 | 90) => void;
 }) {
+  const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
   const metrics = data.metrics ?? null;
   const series = metrics?.series.filter(
     (row) => row.averagePaymentUsd !== null && row.medianPaymentUsd !== null,
@@ -1049,35 +1124,47 @@ function TrustBarometer({
   );
   const largest = series[largestIndex];
   const largestX = series.length < 2 ? 500 : 54 + (largestIndex / Math.max(1, series.length - 1)) * 892;
+  const pointX = (index: number) =>
+    series.length < 2 ? 500 : 54 + (index / Math.max(1, series.length - 1)) * 892;
+  const pointY = (value: number | null) => 224 - ((value ?? 0) / yMax) * 176;
+  const activeRow = activePointIndex === null ? null : series[activePointIndex] ?? null;
+  const activeX = activePointIndex === null ? 54 : pointX(activePointIndex);
+  const activeAverageY = pointY(activeRow?.averagePaymentUsd ?? null);
+  const activeMedianY = pointY(activeRow?.medianPaymentUsd ?? null);
+  const tooltipX = activeX > 720 ? activeX - 205 : activeX + 14;
+  const tooltipY = Math.min(
+    156,
+    Math.max(52, Math.min(activeAverageY, activeMedianY) - 72),
+  );
+
   return (
     <section className="trustBarometer" id="trust-barometer">
-      <div className="trustHeader">
-        <div>
+      <div className="trustPrimary">
+        <div className="trustHeader">
           <span className="sectionNumber">Trust Barometer</span>
-          <h2>Volume measures activity.<br /><em>Ticket size measures trust.</em></h2>
-        </div>
-        <div className="trustHeaderAside">
-          <div className="periodControl trustPeriod" aria-label="Trust Barometer time period">
-            {TRUST_PERIODS.map((item) => (
-              <button
-                key={item.days}
-                className={period === item.days ? "active" : ""}
-                onClick={() => onPeriodChange(item.days)}
-                aria-pressed={period === item.days}
-              >
-                {item.label}
-              </button>
-            ))}
+          <h2><em>Ticket size measures trust.</em></h2>
+          <div className="trustHeaderAside">
+            <div className="periodControl trustPeriod" aria-label="Trust Barometer time period">
+              {TRUST_PERIODS.map((item) => (
+                <button
+                  key={item.days}
+                  className={period === item.days ? "active" : ""}
+                  onClick={() => onPeriodChange(item.days)}
+                  aria-pressed={period === item.days}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p>
+              Free-tier calls excluded. Computed on agent-commerce volume only—mints,
+              self-transfers, and speculative flows removed.{" "}
+              <a href={data.methodology}>See methodology ↗</a>
+            </p>
           </div>
-          <p>
-            Free-tier calls excluded. Computed on agent-commerce volume only—mints,
-            self-transfers, and speculative flows removed.{" "}
-            <a href={data.methodology}>See methodology ↗</a>
-          </p>
         </div>
-      </div>
 
-      <article className="trustHeroChart" aria-label="Average and median qualifying payment size">
+        <article className="trustHeroChart" aria-label="Average and median qualifying payment size">
         <div className="trustChartHead">
           <div>
             <InfoTerm
@@ -1103,7 +1190,35 @@ function TrustBarometer({
               <span><i className="median" /> Median</span>
               <span>{compact(metrics.qualifyingPaymentCount)} qualifying payments</span>
             </div>
-            <svg viewBox="0 0 1000 260" role="img" aria-label={`Average and median MPP ticket size over ${period} days`}>
+            <svg
+              viewBox="0 0 1000 260"
+              role="img"
+              tabIndex={0}
+              aria-label={`Interactive average and median ticket-size chart over ${period === 0 ? "all verified history" : `${period} days`}. Click or move across the chart to inspect a date.`}
+              onPointerMove={(event) => {
+                if (!series.length) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const viewBoxX = ((event.clientX - bounds.left) / bounds.width) * 1000;
+                const index = Math.round(((viewBoxX - 54) / 892) * Math.max(1, series.length - 1));
+                setActivePointIndex(Math.max(0, Math.min(series.length - 1, index)));
+              }}
+              onClick={(event) => {
+                if (!series.length) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const viewBoxX = ((event.clientX - bounds.left) / bounds.width) * 1000;
+                const index = Math.round(((viewBoxX - 54) / 892) * Math.max(1, series.length - 1));
+                setActivePointIndex(Math.max(0, Math.min(series.length - 1, index)));
+              }}
+              onKeyDown={(event) => {
+                if (!series.length || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+                event.preventDefault();
+                setActivePointIndex((current) => {
+                  const start = current ?? series.length - 1;
+                  return Math.max(0, Math.min(series.length - 1, start + (event.key === "ArrowRight" ? 1 : -1)));
+                });
+              }}
+            >
+              <title>Average and median qualifying ticket size. Select any date to inspect its values.</title>
               <line x1="54" y1="48" x2="946" y2="48" />
               <line x1="54" y1="136" x2="946" y2="136" />
               <line x1="54" y1="224" x2="946" y2="224" />
@@ -1112,6 +1227,17 @@ function TrustBarometer({
               <text className="trustAxisLabel" x="47" y="228" textAnchor="end">$0</text>
               <polyline className="trustAverageLine" points={chartPoints("averagePaymentUsd")} />
               <polyline className="trustMedianLine" points={chartPoints("medianPaymentUsd")} />
+              {activeRow ? (
+                <g className="trustInspection">
+                  <line x1={activeX} y1="42" x2={activeX} y2="224" />
+                  <circle className="average" cx={activeX} cy={activeAverageY} r="5" />
+                  <circle className="median" cx={activeX} cy={activeMedianY} r="4" />
+                  <rect x={tooltipX} y={tooltipY} width="190" height="66" rx="9" />
+                  <text className="date" x={tooltipX + 12} y={tooltipY + 18}>{trustChartDate(activeRow.date)}</text>
+                  <text x={tooltipX + 12} y={tooltipY + 38}>Average {usd(activeRow.averagePaymentUsd ?? 0, true)}</text>
+                  <text x={tooltipX + 12} y={tooltipY + 56}>Median {usd(activeRow.medianPaymentUsd ?? 0, true)}</text>
+                </g>
+              ) : null}
               {largest ? (
                 <g className="trustMaximum">
                   <line className="trustOutlierRail" x1="54" y1="24" x2="946" y2="24" />
@@ -1124,6 +1250,11 @@ function TrustBarometer({
               <text x="54" y="252">{series[0]?.date ?? data.coverageStart?.slice(0, 10)}</text>
               <text x="946" y="252" textAnchor="end">{series.at(-1)?.date ?? data.coverageEnd?.slice(0, 10)}</text>
             </svg>
+            <p className="trustChartInstruction" aria-live="polite">
+              {activeRow
+                ? `${trustChartDate(activeRow.date)}: average ${usd(activeRow.averagePaymentUsd ?? 0, true)}; median ${usd(activeRow.medianPaymentUsd ?? 0, true)}.`
+                : "Click or move across the chart to inspect a date and its ticket size."}
+            </p>
             <p className="trustScopeNote">{data.reason}</p>
           </div>
         ) : (
@@ -1140,7 +1271,8 @@ function TrustBarometer({
             </div>
           </div>
         )}
-      </article>
+        </article>
+      </div>
 
       <div className="trustLadder" aria-label="Payment threshold ladder">
         {(metrics?.thresholds ?? [1, 10, 100, 1_000].map((amount) => ({ amount, count: 0, delta: null }))).map((threshold, index) => {
@@ -1221,6 +1353,11 @@ export default function Home() {
   );
   const [serviceSearch, setServiceSearch] = useState("");
   const [serviceQuery, setServiceQuery] = useState("");
+  const [serviceSuggestions, setServiceSuggestions] = useState<Service[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionIndex, setSuggestionIndex] = useState(-1);
+  const serviceSuggestionListId = useId();
   const [trustPeriod, setTrustPeriod] = useState<0 | 7 | 30 | 90>(30);
   const [trustData, setTrustData] = useState<TrustBarometerData>(EMPTY_TRUST_BAROMETER);
   const [directory, setDirectory] =
@@ -1347,6 +1484,51 @@ export default function Home() {
     };
   }, [period, protocol, servicePage, serviceQuery, sort]);
 
+  useEffect(() => {
+    const search = serviceSearch.trim();
+    if (search.length < 2 || search === serviceQuery) {
+      queueMicrotask(() => {
+        setServiceSuggestions([]);
+        setSuggestionsLoading(false);
+        setSuggestionIndex(-1);
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setSuggestionsLoading(true);
+      const parameters = new URLSearchParams({
+        protocol,
+        days: String(period),
+        page: "1",
+        pageSize: "8",
+        sort: "transactions",
+        q: search,
+      });
+      fetch(`/api/services?${parameters.toString()}`, { signal: controller.signal })
+        .then((response) => {
+          if (!response.ok) throw new Error("Suggestion request failed");
+          return response.json();
+        })
+        .then((nextDirectory: DirectoryData) => {
+          setServiceSuggestions(nextDirectory.items);
+          setSuggestionsOpen(true);
+          setSuggestionIndex(-1);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setServiceSuggestions([]);
+        })
+        .finally(() => setSuggestionsLoading(false));
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [period, protocol, serviceQuery, serviceSearch]);
+
   const selectedKey = String(period) as "0" | "1" | "7" | "30";
   const selectedProtocolData = data.protocols[protocol];
   const selected = selectedProtocolData.periods[selectedKey];
@@ -1397,11 +1579,24 @@ export default function Home() {
   const combinedTransactions =
     mppSelected.totalTransactions + x402Selected.totalTransactions;
   const freshness = freshnessFor(data, protocol, period);
+  const concentrationAvailable = directory.items.some(
+    (service) => service.buyerConcentration?.evidenceStatus === "verified",
+  );
 
   function searchServices(event: FormEvent) {
     event.preventDefault();
     setServicePage(1);
     setServiceQuery(serviceSearch.trim());
+    setSuggestionsOpen(false);
+    setSuggestionIndex(-1);
+  }
+
+  function selectServiceSuggestion(service: Service) {
+    setServiceSearch(service.name);
+    setServiceQuery(service.name);
+    setServicePage(1);
+    setSuggestionsOpen(false);
+    setSuggestionIndex(-1);
   }
 
   function protocolHasAllTime(nextProtocol: ProtocolKey) {
@@ -2076,6 +2271,7 @@ export default function Home() {
       </section>
 
       <TrustBarometer
+        key={`${protocol}-${trustPeriod}-${trustData.coverageEnd ?? "pending"}`}
         data={trustData}
         period={trustPeriod}
         protocol={protocol}
@@ -2431,17 +2627,87 @@ export default function Home() {
             <button className="active">Named services</button>
             <button disabled title="The address-level recipient directory will unlock after the direct identity index is production-ready.">All recipients</button>
           </div>
-          <form className="directorySearch" onSubmit={searchServices} role="search">
+          <form
+            className="directorySearch"
+            onSubmit={searchServices}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionsOpen(false);
+            }}
+            role="search"
+          >
             <label className="srOnly" htmlFor="service-search">Search named services</label>
-            <input
-              id="service-search"
-              type="search"
-              value={serviceSearch}
-              onChange={(event) => setServiceSearch(event.target.value)}
-              placeholder="Search name, domain, or address"
-            />
+            <div className="directorySearchField">
+              <input
+                id="service-search"
+                type="search"
+                value={serviceSearch}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={suggestionsOpen}
+                aria-controls={serviceSuggestionListId}
+                aria-activedescendant={suggestionIndex >= 0 ? `${serviceSuggestionListId}-${suggestionIndex}` : undefined}
+                onFocus={() => {
+                  if (serviceSuggestions.length || suggestionsLoading) setSuggestionsOpen(true);
+                }}
+                onChange={(event) => {
+                  setServiceSearch(event.target.value);
+                  setSuggestionsOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setSuggestionsOpen(false);
+                    setSuggestionIndex(-1);
+                    return;
+                  }
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    if (!serviceSuggestions.length) return;
+                    event.preventDefault();
+                    setSuggestionsOpen(true);
+                    setSuggestionIndex((current) => {
+                      if (event.key === "ArrowDown") return Math.min(serviceSuggestions.length - 1, current + 1);
+                      return Math.max(0, current < 0 ? serviceSuggestions.length - 1 : current - 1);
+                    });
+                    return;
+                  }
+                  if (event.key === "Enter" && suggestionIndex >= 0 && serviceSuggestions[suggestionIndex]) {
+                    event.preventDefault();
+                    selectServiceSuggestion(serviceSuggestions[suggestionIndex]);
+                  }
+                }}
+                placeholder="Search name, domain, or address"
+              />
+              {suggestionsOpen && serviceSearch.trim().length >= 2 ? (
+                <ul className="serviceSuggestions" id={serviceSuggestionListId} role="listbox">
+                  {suggestionsLoading ? <li className="suggestionStatus">Searching services…</li> : null}
+                  {!suggestionsLoading && !serviceSuggestions.length ? (
+                    <li className="suggestionStatus">No matching services</li>
+                  ) : null}
+                  {serviceSuggestions.map((service, index) => (
+                    <li
+                      id={`${serviceSuggestionListId}-${index}`}
+                      key={`${service.protocol}-${service.id}`}
+                      role="option"
+                      aria-selected={suggestionIndex === index}
+                    >
+                      <button
+                        type="button"
+                        className={suggestionIndex === index ? "active" : ""}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectServiceSuggestion(service)}
+                      >
+                        <span>
+                          <strong>{service.name}</strong>
+                          <small>{service.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</small>
+                        </span>
+                        <i>{service.protocol.toUpperCase()}</i>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
             <button type="submit">Search</button>
-            {serviceQuery && <button type="button" onClick={() => { setServiceSearch(""); setServiceQuery(""); setServicePage(1); }}>Clear</button>}
+            {serviceQuery && <button type="button" onClick={() => { setServiceSearch(""); setServiceQuery(""); setServiceSuggestions([]); setSuggestionsOpen(false); setServicePage(1); }}>Clear</button>}
           </form>
         </div>
 
@@ -2511,6 +2777,7 @@ export default function Home() {
                     Payer addresses {sort === "buyers" ? "↓" : ""}
                   </button>
                 </th>
+                {concentrationAvailable ? <th>Top 10 buyer share</th> : null}
                 <th>
                   <button
                     className={sort === "latest" ? "sortActive" : ""}
@@ -2548,6 +2815,13 @@ export default function Home() {
                   <td>{compact(service.stats.transactions)}</td>
                   <td>{usd(service.stats.volume)}</td>
                   <td>{compact(service.stats.buyers)}</td>
+                  {concentrationAvailable ? (
+                    <td>
+                      {service.buyerConcentration?.evidenceStatus === "verified" ? (
+                        <BuyerConcentrationDisclosure concentration={service.buyerConcentration} />
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td className="latest">{relativeTime(service.stats.latestTx)}</td>
                 </tr>
               ))}
@@ -2571,13 +2845,14 @@ export default function Home() {
                       <td>—</td>
                       <td>—</td>
                       <td>—</td>
+                      {concentrationAvailable ? <td>—</td> : null}
                       <td>—</td>
                     </tr>
                   ),
                 )}
               {!directoryLoading && directoryError && (
                 <tr className="directoryErrorRow">
-                  <td colSpan={5}>{directoryError}</td>
+                  <td colSpan={concentrationAvailable ? 6 : 5}>{directoryError}</td>
                 </tr>
               )}
             </tbody>

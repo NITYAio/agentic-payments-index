@@ -933,6 +933,145 @@ export function aggregateX402TerminalPayments({ singleRows, multiLegRows, from, 
   };
 }
 
+export function aggregateX402EventPayments({ payments, from, to }) {
+  if (!(from instanceof Date) || !(to instanceof Date) || to <= from) {
+    throw new Error("A valid x402 event aggregation range is required.");
+  }
+  if (!Array.isArray(payments)) throw new Error("x402 event payments must be an array.");
+
+  const byDate = new Map();
+  const windowBuyers = new Set();
+  const windowSellers = new Set();
+  const windowTrustAmounts = [];
+  let windowPaymentVolumeRaw = 0n;
+  let windowRecipientVolumeRaw = 0n;
+  let windowGrossVolumeRaw = 0n;
+  let windowRawTransferCount = 0;
+  let windowExcludedZeroCount = 0;
+  let windowExcludedSelfCount = 0;
+
+  const day = (activityDate) => {
+    const value = byDate.get(activityDate) ?? {
+      activityDate,
+      transactionCount: 0,
+      rawTransferCount: 0,
+      paymentVolumeRaw: 0n,
+      recipientVolumeRaw: 0n,
+      grossVolumeRaw: 0n,
+      buyers: new Set(),
+      sellers: new Set(),
+      trustAmounts: [],
+      excludedZeroCount: 0,
+      excludedSelfCount: 0,
+    };
+    byDate.set(activityDate, value);
+    return value;
+  };
+
+  for (const payment of payments) {
+    const timestamp = new Date(payment.timestamp);
+    if (!Number.isFinite(timestamp.getTime())) throw new Error("Invalid x402 event timestamp.");
+    if (timestamp < from || timestamp >= to) continue;
+    const activityDate = timestamp.toISOString().slice(0, 10);
+    const amountRaw = BigInt(payment.amountRaw);
+    const recipientAmountRaw = BigInt(payment.recipientAmountRaw ?? payment.amountRaw);
+    const grossVolumeRaw = BigInt(payment.grossVolumeRaw ?? payment.amountRaw);
+    const rawLegCount = Number(payment.rawLegCount ?? 1);
+    if (!Number.isSafeInteger(rawLegCount) || rawLegCount < 1) {
+      throw new Error("Invalid x402 raw transfer count.");
+    }
+    const buyer = String(payment.from ?? "").toLowerCase();
+    const seller = String(payment.to ?? "").toLowerCase();
+    if (!/^0x[0-9a-f]{40}$/.test(buyer) || !/^0x[0-9a-f]{40}$/.test(seller)) {
+      throw new Error("Invalid x402 event identity.");
+    }
+
+    const current = day(activityDate);
+    current.transactionCount += 1;
+    current.rawTransferCount += rawLegCount;
+    current.paymentVolumeRaw += amountRaw;
+    current.recipientVolumeRaw += recipientAmountRaw;
+    current.grossVolumeRaw += grossVolumeRaw;
+    current.buyers.add(buyer);
+    current.sellers.add(seller);
+    windowBuyers.add(buyer);
+    windowSellers.add(seller);
+    windowPaymentVolumeRaw += amountRaw;
+    windowRecipientVolumeRaw += recipientAmountRaw;
+    windowGrossVolumeRaw += grossVolumeRaw;
+    windowRawTransferCount += rawLegCount;
+
+    if (buyer === seller) {
+      current.excludedSelfCount += 1;
+      windowExcludedSelfCount += 1;
+    } else if (amountRaw === 0n) {
+      current.excludedZeroCount += 1;
+      windowExcludedZeroCount += 1;
+    } else {
+      current.trustAmounts.push(amountRaw);
+      windowTrustAmounts.push(amountRaw);
+    }
+  }
+
+  const limitation =
+    "Base USDC settlements detected from x402 authorization, proxy-settlement, and batch-claim events. " +
+    "Receive-then-forward chains count once at the payer's original amount and resolve to the terminal recipient. " +
+    "Zero-value and self-payments are excluded from ticket-size metrics. Unresolved ownership, non-Base, and non-USDC activity remain outside coverage.";
+  const metrics = [...byDate.values()]
+    .map((value) => ({
+      activityDate: value.activityDate,
+      measurementUnit: "onchain_settlement",
+      transactionCount: value.transactionCount,
+      settlementCount: value.transactionCount,
+      rawTransferCount: value.rawTransferCount,
+      volumeUsdMicros: safeNumber(value.paymentVolumeRaw, "x402 event payment USD volume"),
+      recipientVolumeUsdMicros: safeNumber(
+        value.recipientVolumeRaw,
+        "x402 event recipient USD volume",
+      ),
+      grossVolumeUsdMicros: safeNumber(value.grossVolumeRaw, "x402 event gross USD volume"),
+      buyerCount: value.buyers.size,
+      sellerCount: value.sellers.size,
+      ...summarizeTrustPayments(
+        value.trustAmounts,
+        value.excludedZeroCount,
+        value.excludedSelfCount,
+      ),
+      evidenceLevel: "deterministic",
+      isAdjusted: false,
+      limitation,
+    }))
+    .sort((left, right) => left.activityDate.localeCompare(right.activityDate));
+
+  return {
+    metrics,
+    windowSummary: {
+      rangeStart: from.toISOString(),
+      rangeEnd: to.toISOString(),
+      measurementUnit: "onchain_settlement",
+      transactionCount: metrics.reduce((total, metric) => total + metric.transactionCount, 0),
+      settlementCount: metrics.reduce((total, metric) => total + metric.settlementCount, 0),
+      rawTransferCount: windowRawTransferCount,
+      volumeUsdMicros: safeNumber(windowPaymentVolumeRaw, "x402 event payment window USD volume"),
+      recipientVolumeUsdMicros: safeNumber(
+        windowRecipientVolumeRaw,
+        "x402 event recipient window USD volume",
+      ),
+      grossVolumeUsdMicros: safeNumber(windowGrossVolumeRaw, "x402 event gross window USD volume"),
+      buyerCount: windowBuyers.size,
+      sellerCount: windowSellers.size,
+      ...summarizeTrustPayments(
+        windowTrustAmounts,
+        windowExcludedZeroCount,
+        windowExcludedSelfCount,
+      ),
+      evidenceLevel: "deterministic",
+      isAdjusted: false,
+      limitation,
+    },
+  };
+}
+
 export function normalizeX402DailyRows(rows) {
   if (!Array.isArray(rows)) throw new Error("CDP SQL response result must be an array.");
   const limitation =

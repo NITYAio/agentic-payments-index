@@ -8,7 +8,7 @@ import { promisify } from "node:util";
 
 const execFileAsync = promisify(execFile);
 const DAY_MS = 86_400_000;
-const WINDOWS = [1, 7, 30];
+const DEFAULT_WINDOWS = [1, 7, 30];
 const SUPPORTED_PROTOCOLS = ["mpp", "x402"];
 
 function configuredProtocols() {
@@ -21,6 +21,19 @@ function configuredProtocols() {
     throw new Error(`REFRESH_PROTOCOLS contains unsupported values: ${invalid.join(", ")}.`);
   }
   if (requested.length === 0) throw new Error("REFRESH_PROTOCOLS must include at least one protocol.");
+  return [...new Set(requested)];
+}
+
+function configuredWindows() {
+  const requested = (process.env.REFRESH_WINDOWS ?? DEFAULT_WINDOWS.join(","))
+    .split(",")
+    .map((value) => Number.parseInt(value.trim(), 10))
+    .filter((value) => Number.isFinite(value));
+  const invalid = requested.filter((value) => !DEFAULT_WINDOWS.includes(value));
+  if (invalid.length > 0) {
+    throw new Error(`REFRESH_WINDOWS contains unsupported values: ${invalid.join(", ")}.`);
+  }
+  if (requested.length === 0) throw new Error("REFRESH_WINDOWS must include 1, 7, or 30.");
   return [...new Set(requested)];
 }
 
@@ -56,6 +69,24 @@ async function collect(protocol, days, to, dryRun) {
   if (protocol === "mpp") {
     args.push("--chunk-size", "10000", "--rpc-delay-ms", "100");
   }
+  if (protocol === "x402") {
+    const source = (
+      process.env.X402_SOURCE ?? (process.env.BASE_RPC_URL ? "events" : "cdp")
+    ).toLowerCase();
+    args.push("--source", source);
+    if (["events", "event", "rpc"].includes(source)) {
+      args.push(
+        "--chunk-size",
+        process.env.X402_EVENT_CHUNK_SIZE ?? "10000",
+        "--rpc-delay-ms",
+        process.env.X402_RPC_DELAY_MS ?? "75",
+        "--rpc-concurrency",
+        process.env.X402_RPC_CONCURRENCY ?? "3",
+        "--block-batch-size",
+        process.env.X402_BLOCK_BATCH_SIZE ?? "3",
+      );
+    }
+  }
   if (dryRun) args.push("--no-ingest");
   const { stdout, stderr } = await execFileAsync(process.execPath, args, {
     cwd: process.cwd(),
@@ -88,11 +119,32 @@ async function collect(protocol, days, to, dryRun) {
 
 async function main() {
   const protocols = configuredProtocols();
+  const windows = configuredWindows();
   if (protocols.includes("mpp") && !process.env.TEMPO_RPC_URL) {
     throw new Error("TEMPO_RPC_URL is required when refreshing MPP.");
   }
-  if (protocols.includes("x402") && !process.env.CDP_CLIENT_API_KEY) {
-    throw new Error("CDP_CLIENT_API_KEY is required when refreshing x402.");
+  const x402Source = (
+    process.env.X402_SOURCE ?? (process.env.BASE_RPC_URL ? "events" : "cdp")
+  ).toLowerCase();
+  if (
+    protocols.includes("x402") &&
+    ["events", "event", "rpc"].includes(x402Source) &&
+    !process.env.BASE_RPC_URL
+  ) {
+    throw new Error("BASE_RPC_URL is required for event-based x402 refreshes.");
+  }
+  if (
+    protocols.includes("x402") &&
+    ["cdp", "sql"].includes(x402Source) &&
+    !process.env.CDP_CLIENT_API_KEY
+  ) {
+    throw new Error("CDP_CLIENT_API_KEY is required for CDP-based x402 refreshes.");
+  }
+  if (
+    protocols.includes("x402") &&
+    !["events", "event", "rpc", "cdp", "sql"].includes(x402Source)
+  ) {
+    throw new Error("X402_SOURCE must be events or cdp.");
   }
   const dryRun = process.env.REFRESH_DRY_RUN === "1";
   if (!dryRun && !process.env.DIRECT_SOURCE_INGEST_URL) {
@@ -103,14 +155,14 @@ async function main() {
   }
   const to = exactTimestamp(process.env.REFRESH_TO);
   const results = [];
-  for (const days of WINDOWS) {
+  for (const days of windows) {
     for (const protocol of protocols) {
       process.stdout.write(`Refreshing ${protocol} ${days}d through ${to.toISOString()}\n`);
       results.push(await collect(protocol, days, to, dryRun));
     }
   }
   process.stdout.write(
-    `${JSON.stringify({ dryRun, protocols, to: to.toISOString(), results }, null, 2)}\n`,
+    `${JSON.stringify({ dryRun, protocols, windows, to: to.toISOString(), results }, null, 2)}\n`,
   );
 }
 

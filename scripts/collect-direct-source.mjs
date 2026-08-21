@@ -18,6 +18,11 @@ import {
   splitUtcDateRange,
   summarizeTrustPayments,
 } from "./lib/direct-source.mjs";
+import { collectX402BaseEventRange } from "./lib/x402-base-events.mjs";
+import {
+  blockRangeForDates,
+  createBudgetSafeRpcClient,
+} from "./lib/x402-base-rpc.mjs";
 
 const DEFAULT_TEMPO_RPC = "https://rpc.tempo.xyz";
 const CDP_HOST = "api.cdp.coinbase.com";
@@ -110,7 +115,7 @@ async function cdpSql(sql) {
   throw new Error("Coinbase CDP SQL exhausted its retry budget.");
 }
 
-async function collectX402({ from, to, options }) {
+async function collectX402Cdp({ from, to, options }) {
   const registry = await loadRegistry(options.registry);
   const addresses = [...new Set(registry.addresses.map((entry) => entry.address.toLowerCase()))];
   const tokenAddress = registry.tokenAddress.toLowerCase();
@@ -227,6 +232,121 @@ async function collectX402({ from, to, options }) {
       methodologyUrl: "https://agenticpaymentsindex.org/methodology",
     },
   };
+}
+
+async function collectX402Events({ from, to, options }) {
+  const registry = await loadRegistry(options.registry);
+  const rpcUrl = options["rpc-url"] ?? process.env.BASE_RPC_URL;
+  if (!rpcUrl) {
+    throw new Error("BASE_RPC_URL is required for event-based x402 collection.");
+  }
+  const rpcDelayMs = Number.parseInt(options["rpc-delay-ms"] ?? "75", 10);
+  const rpcConcurrency = Number.parseInt(options["rpc-concurrency"] ?? "3", 10);
+  const blockBatchSize = Number.parseInt(options["block-batch-size"] ?? "3", 10);
+  const preferredChunk = Number.parseInt(options["chunk-size"] ?? "10000", 10);
+  if (!Number.isSafeInteger(rpcDelayMs) || rpcDelayMs < 0 || rpcDelayMs > 5_000) {
+    throw new Error("--rpc-delay-ms must be an integer between 0 and 5000.");
+  }
+  if (!Number.isSafeInteger(rpcConcurrency) || rpcConcurrency < 1 || rpcConcurrency > 8) {
+    throw new Error("--rpc-concurrency must be an integer between 1 and 8.");
+  }
+  if (!Number.isSafeInteger(blockBatchSize) || blockBatchSize < 1 || blockBatchSize > 25) {
+    throw new Error("--block-batch-size must be an integer between 1 and 25.");
+  }
+  if (!Number.isSafeInteger(preferredChunk) || preferredChunk < 1 || preferredChunk > 100_000) {
+    throw new Error("--chunk-size must be an integer between 1 and 100000.");
+  }
+
+  const rpcClients = Array.from({ length: rpcConcurrency }, () =>
+    createBudgetSafeRpcClient({ url: rpcUrl, minDelayMs: rpcDelayMs }),
+  );
+  const { latest, fromBlock, toBlockExclusive } = await blockRangeForDates(
+    rpcClients[0],
+    from,
+    to,
+  );
+  const queryDefinition = JSON.stringify({
+    rpcProviderHost: new URL(rpcUrl).host,
+    chainId: 8453,
+    latest,
+    fromBlock,
+    toBlockExclusive,
+    tokenAddress: registry.tokenAddress.toLowerCase(),
+    facilitatorRegistryVersion: registry.sourcePackageVersion,
+    classifier: "x402-event-terminal-recipient-v1",
+  });
+  if (options.dryRun) {
+    return {
+      dryRun: true,
+      protocol: "x402",
+      source: "events",
+      queryHash: sha256Hex(queryDefinition),
+      fromBlock,
+      toBlockExclusive,
+      rpcProviderHost: new URL(rpcUrl).host,
+    };
+  }
+
+  const collected = await collectX402BaseEventRange({
+    rpc: rpcClients[0],
+    blockRpcs: rpcClients,
+    fromBlock,
+    toBlockExclusive,
+    facilitatorRegistry: registry.addresses,
+    from,
+    to,
+    preferredChunk,
+    blockBatchSize,
+    tokenAddress: registry.tokenAddress.toLowerCase(),
+  });
+  const template = collected.metrics?.[0] ?? {
+    measurementUnit: "onchain_settlement",
+    evidenceLevel: "deterministic",
+    isAdjusted: false,
+    limitation:
+      "Base USDC settlements detected from x402 authorization, proxy-settlement, and batch-claim events. Receive-then-forward chains count once at the payer's original amount and resolve to the terminal recipient. Zero-value and self-payments are excluded from ticket-size metrics. Unresolved ownership, non-Base, and non-USDC activity remain outside coverage.",
+  };
+  return {
+    sourceKey: "direct:x402:base-usdc:rpc-events:terminal-recipient-v1",
+    protocol: "x402",
+    network: "base",
+    queryHash: sha256Hex(queryDefinition),
+    inputRowCount: collected.signalLogCount,
+    inputBreakdown: {
+      authorizationLogs: collected.authorizationLogCount,
+      proxyLogs: collected.proxyLogCount,
+      claimedLogs: collected.claimedLogCount,
+      rawTransferLegs: collected.rawLegCount,
+      terminalPayments: collected.paymentCount,
+      unresolvedBatchClaims: collected.unresolvedBatchClaims,
+      facilitatorFilteredTransactions: collected.filteredTransactions,
+    },
+    metrics: fillDailyMetricRange(from, to, collected.metrics ?? [], template),
+    windowSummary: collected.windowSummary,
+    coverage: {
+      measurementUnit: "onchain_settlement",
+      sourceType: "chain_rpc",
+      sourceUrl: "https://docs.base.org/base-chain/quickstart/connecting-to-base",
+      coverageStart: from.toISOString(),
+      coverageEnd: to.toISOString(),
+      status: recentStatus(to),
+      limitation: template.limitation,
+      methodologyUrl: "https://agenticpaymentsindex.org/methodology",
+    },
+  };
+}
+
+async function collectX402({ from, to, options }) {
+  const source = String(
+    options.source ?? process.env.X402_SOURCE ?? (process.env.BASE_RPC_URL ? "events" : "cdp"),
+  ).toLowerCase();
+  if (["events", "event", "rpc"].includes(source)) {
+    return collectX402Events({ from, to, options });
+  }
+  if (["cdp", "sql"].includes(source)) {
+    return collectX402Cdp({ from, to, options });
+  }
+  throw new Error("--source must be events or cdp for x402 collection.");
 }
 
 async function tempoBlockRange(rpc, from, to) {

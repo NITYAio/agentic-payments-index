@@ -6,6 +6,7 @@ import {
   aggregateMppPayments,
   aggregateMppIdentityActivity,
   aggregateTempoLogs,
+  aggregateX402EventPayments,
   aggregateX402TerminalPayments,
   buildTempoLogFilter,
   buildTempoSessionLogFilter,
@@ -24,6 +25,21 @@ import {
   TEMPO_SETTLED_TOPIC,
   x402TerminalIdentityActivities,
 } from "../scripts/lib/direct-source.mjs";
+import {
+  BASE_USDC_ADDRESS,
+  collectX402BaseRpcChunk,
+  createBudgetSafeRpcClient,
+  decodeTransferWithAuthorizationTrace,
+  ERC20_TRANSFER_TOPIC,
+  transfersFromUsdcReceipt,
+  x402IdentityActivitiesFromTransfers,
+} from "../scripts/lib/x402-base-rpc.mjs";
+import {
+  blockscoutTransactionReceipt,
+  blockscoutTransactionsForAddress,
+  collectX402BlockscoutTransactions,
+  createBudgetSafeBlockscoutClient,
+} from "../scripts/lib/x402-base-blockscout.mjs";
 
 const payerTopic = `0x${"0".repeat(24)}1111111111111111111111111111111111111111`;
 const sellerOneTopic = `0x${"0".repeat(24)}2222222222222222222222222222222222222222`;
@@ -44,6 +60,58 @@ test("UTC ranges split at midnight without gaps or overlap", () => {
       ["2026-08-09T00:00:00.000Z", "2026-08-09T06:00:00.000Z"],
     ],
   );
+});
+
+test("x402 event aggregation counts terminal payments once and gates ticket-size exclusions", () => {
+  const from = new Date("2026-08-18T00:00:00.000Z");
+  const to = new Date("2026-08-19T00:00:00.000Z");
+  const payer = "0x1111111111111111111111111111111111111111";
+  const recipient = "0x2222222222222222222222222222222222222222";
+  const self = "0x3333333333333333333333333333333333333333";
+  const result = aggregateX402EventPayments({
+    from,
+    to,
+    payments: [
+      {
+        timestamp: "2026-08-18T01:00:00.000Z",
+        from: payer,
+        to: recipient,
+        amountRaw: 2_000_000n,
+        recipientAmountRaw: 1_900_000n,
+        grossVolumeRaw: 3_900_000n,
+        rawLegCount: 2,
+      },
+      {
+        timestamp: "2026-08-18T02:00:00.000Z",
+        from: payer,
+        to: recipient,
+        amountRaw: 0n,
+      },
+      {
+        timestamp: "2026-08-18T03:00:00.000Z",
+        from: self,
+        to: self,
+        amountRaw: 500_000n,
+      },
+      {
+        timestamp: "2026-08-19T01:00:00.000Z",
+        from: payer,
+        to: recipient,
+        amountRaw: 9_000_000n,
+      },
+    ],
+  });
+  assert.equal(result.windowSummary.transactionCount, 3);
+  assert.equal(result.windowSummary.rawTransferCount, 4);
+  assert.equal(result.windowSummary.volumeUsdMicros, 2_500_000);
+  assert.equal(result.windowSummary.recipientVolumeUsdMicros, 2_400_000);
+  assert.equal(result.windowSummary.grossVolumeUsdMicros, 4_400_000);
+  assert.equal(result.windowSummary.buyerCount, 2);
+  assert.equal(result.windowSummary.sellerCount, 2);
+  assert.equal(result.windowSummary.qualifyingPaymentCount, 1);
+  assert.equal(result.windowSummary.excludedZeroCount, 1);
+  assert.equal(result.windowSummary.excludedSelfCount, 1);
+  assert.equal(result.windowSummary.overOneCount, 1);
 });
 
 test("Tempo log queries filter at the RPC layer to the two supported USD assets", () => {
@@ -108,6 +176,337 @@ test("JSON-RPC collection retries transient network failures", async () => {
   });
   assert.equal(await rpc("eth_blockNumber", []), "0x2a");
   assert.deepEqual(requestIds, [1, 1]);
+});
+
+test("budget-safe Base RPC stops immediately on payment-required responses", async () => {
+  let calls = 0;
+  const rpc = createBudgetSafeRpcClient({
+    url: "https://base.example",
+    minDelayMs: 0,
+    sleepImpl: async () => {},
+    fetchImpl: async () => {
+      calls += 1;
+      return Response.json(
+        { jsonrpc: "2.0", id: 1, error: { message: "Payment required for paid plan" } },
+        { status: 402 },
+      );
+    },
+  });
+  await assert.rejects(
+    rpc("trace_filter", [{}]),
+    (error) => error.billingBlocked === true && /stopped/i.test(error.message),
+  );
+  assert.equal(calls, 1);
+});
+
+test("budget-safe Base RPC retries incomplete successful batch responses", async () => {
+  let calls = 0;
+  const rpc = createBudgetSafeRpcClient({
+    url: "https://base.example",
+    minDelayMs: 0,
+    sleepImpl: async () => {},
+    fetchImpl: async (_url, init) => {
+      calls += 1;
+      const entries = JSON.parse(init.body);
+      const rows = entries.map((entry) => ({
+        jsonrpc: "2.0",
+        id: entry.id,
+        result: entry.method,
+      }));
+      return Response.json(calls === 1 ? rows.slice(0, 1) : rows);
+    },
+  });
+  assert.deepEqual(
+    await rpc.batch([
+      { method: "eth_getBlockReceipts", params: ["0x1"] },
+      { method: "eth_getBlockReceipts", params: ["0x2"] },
+    ]),
+    ["eth_getBlockReceipts", "eth_getBlockReceipts"],
+  );
+  assert.equal(calls, 2);
+});
+
+test("budget-safe Blockscout client stops immediately on payment-required responses", async () => {
+  let calls = 0;
+  const request = createBudgetSafeBlockscoutClient({
+    baseUrl: "https://base.example/api",
+    minStartDelayMs: 0,
+    sleepImpl: async () => {},
+    fetchImpl: async () => {
+      calls += 1;
+      return Response.json({ message: "Payment required" }, { status: 402 });
+    },
+  });
+  await assert.rejects(
+    request({ module: "account", action: "txlist" }),
+    (error) => error.billingBlocked === true && /stopped/i.test(error.message),
+  );
+  assert.equal(calls, 1);
+});
+
+test("Blockscout client retries rate-limit messages returned with HTTP 200", async () => {
+  let calls = 0;
+  const request = createBudgetSafeBlockscoutClient({
+    baseUrl: "https://base.example/api",
+    minStartDelayMs: 0,
+    sleepImpl: async () => {},
+    fetchImpl: async () => {
+      calls += 1;
+      if (calls === 1) {
+        return Response.json({ status: "0", message: "Too many requests", result: null });
+      }
+      return Response.json({ status: "1", message: "OK", result: [] });
+    },
+  });
+  assert.deepEqual(await request({ module: "account", action: "txlist" }), []);
+  assert.equal(calls, 2);
+});
+
+test("Blockscout address collection splits full result ranges and deduplicates hashes", async () => {
+  const facilitator = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const row = (hash, blockNumber) => ({
+    hash,
+    blockNumber: String(blockNumber),
+    timeStamp: "1787095800",
+    from: facilitator,
+    to: BASE_USDC_ADDRESS,
+    input: "0xe3ee160e",
+    isError: "0",
+    txreceipt_status: "1",
+  });
+  const one = row(`0x${"1".repeat(64)}`, 10);
+  const two = row(`0x${"2".repeat(64)}`, 11);
+  const request = async (parameters) => {
+    if (parameters.startblock === 10 && parameters.endblock === 11) return [one, two];
+    if (parameters.startblock === 10) return [one];
+    return [two];
+  };
+  const transactions = await blockscoutTransactionsForAddress({
+    request,
+    address: facilitator,
+    startBlock: 10,
+    endBlock: 11,
+    pageLimit: 2,
+  });
+  assert.deepEqual(transactions.map((transaction) => transaction.hash), [one.hash, two.hash]);
+});
+
+test("Blockscout transaction info normalizes event logs into a receipt", async () => {
+  const transactionHash = `0x${"a".repeat(64)}`;
+  const receipt = await blockscoutTransactionReceipt(async (parameters) => {
+    assert.deepEqual(parameters, {
+      module: "transaction",
+      action: "gettxinfo",
+      txhash: transactionHash,
+    });
+    return {
+      success: true,
+      logs: [{
+        address: BASE_USDC_ADDRESS,
+        data: "0x1",
+        index: "170",
+        topics: [ERC20_TRANSFER_TOPIC, payerTopic, sellerOneTopic, null],
+      }],
+    };
+  }, transactionHash);
+  assert.equal(receipt.status, "0x1");
+  assert.equal(receipt.transactionHash, transactionHash);
+  assert.equal(receipt.logs[0].logIndex, "0xaa");
+  assert.equal(receipt.logs[0].topics.length, 3);
+});
+
+test("x402 Base calldata decoder extracts payer, recipient, and USDC value", () => {
+  const payer = "1111111111111111111111111111111111111111";
+  const recipient = "2222222222222222222222222222222222222222";
+  const word = (value) => value.padStart(64, "0");
+  const input = `0xe3ee160e${word(payer)}${word(recipient)}${word("2dc6c0")}${word("0")}${word("ffffffff")}${word("a")}${word("1b")}${word("b")}${word("c")}`;
+  const transfer = decodeTransferWithAuthorizationTrace(
+    {
+      type: "call",
+      transactionHash: `0x${"a".repeat(64)}`,
+      action: { input },
+    },
+    "2026-08-18T12:00:00.000Z",
+    7,
+  );
+  assert.equal(transfer.from, `0x${payer}`);
+  assert.equal(transfer.to, `0x${recipient}`);
+  assert.equal(transfer.amountRaw, 3_000_000n);
+  assert.equal(transfer.logIndex, 7);
+});
+
+test("Base receipt parser keeps only successful USDC Transfer logs", () => {
+  const topic = (address) => `0x${address.slice(2).padStart(64, "0")}`;
+  const transactionHash = `0x${"b".repeat(64)}`;
+  const transfers = transfersFromUsdcReceipt(
+    {
+      status: "0x1",
+      transactionHash,
+      logs: [
+        {
+          address: BASE_USDC_ADDRESS,
+          transactionHash,
+          logIndex: "0x4",
+          topics: [
+            ERC20_TRANSFER_TOPIC,
+            topic("0x1111111111111111111111111111111111111111"),
+            topic("0x2222222222222222222222222222222222222222"),
+          ],
+          data: "0x2dc6c0",
+        },
+        {
+          address: "0x3333333333333333333333333333333333333333",
+          transactionHash,
+          logIndex: "0x5",
+          topics: [ERC20_TRANSFER_TOPIC, topic("0x1".padEnd(42, "1")), topic("0x2".padEnd(42, "2"))],
+          data: "0x1",
+        },
+      ],
+    },
+    "2026-08-18T00:00:00.000Z",
+  );
+  assert.equal(transfers.length, 1);
+  assert.equal(transfers[0].amountRaw, 3_000_000n);
+  assert.equal(transfers[0].logIndex, 4);
+});
+
+test("Base RPC chunk hashes direct and proxy-routed terminal identities", async () => {
+  const facilitator = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const payer = "1111111111111111111111111111111111111111";
+  const recipient = "2222222222222222222222222222222222222222";
+  const proxy = "0x3333333333333333333333333333333333333333";
+  const merchant = "0x4444444444444444444444444444444444444444";
+  const directHash = `0x${"c".repeat(64)}`;
+  const proxyHash = `0x${"d".repeat(64)}`;
+  const word = (value) => value.padStart(64, "0");
+  const topic = (address) => `0x${address.slice(2).padStart(64, "0")}`;
+  const responses = {
+    trace_filter: [
+      {
+        type: "call",
+        transactionHash: directHash,
+        action: {
+          from: facilitator,
+          to: BASE_USDC_ADDRESS,
+          input: `0xe3ee160e${word(payer)}${word(recipient)}${word("0f4240")}${word("0")}${word("ffffffff")}${word("a")}${word("1b")}${word("b")}${word("c")}`,
+        },
+      },
+      {
+        type: "call",
+        transactionHash: proxyHash,
+        action: { from: facilitator, to: proxy, input: "0x12345678" },
+      },
+    ],
+    eth_getTransactionReceipt: {
+      status: "0x1",
+      transactionHash: proxyHash,
+      logs: [
+        {
+          address: BASE_USDC_ADDRESS,
+          transactionHash: proxyHash,
+          logIndex: "0x1",
+          topics: [ERC20_TRANSFER_TOPIC, topic(`0x${payer}`), topic(proxy)],
+          data: "0x1e8480",
+        },
+        {
+          address: BASE_USDC_ADDRESS,
+          transactionHash: proxyHash,
+          logIndex: "0x2",
+          topics: [ERC20_TRANSFER_TOPIC, topic(proxy), topic(merchant)],
+          data: "0x1d4c00",
+        },
+      ],
+    },
+  };
+  const result = await collectX402BaseRpcChunk({
+    rpc: async (method) => responses[method],
+    fromBlock: 100,
+    toBlockExclusive: 120,
+    facilitatorAddresses: [facilitator],
+    timestamp: "2026-08-18T00:00:00.000Z",
+  });
+  assert.equal(result.transactionCount, 2);
+  assert.equal(result.directTransactionCount, 1);
+  assert.equal(result.receiptFallbackCount, 1);
+  assert.equal(result.activities.length, 3, "the repeated payer is merged within the month");
+  assert.equal(result.activities.find((row) => row.role === "payer").transactionCount, 2);
+  assert.equal(JSON.stringify(result.activities).includes(payer), false);
+  assert.equal(JSON.stringify(result.activities).includes(proxy.slice(2)), false);
+});
+
+test("Blockscout transactions decode direct authorization and proxy terminal identities", async () => {
+  const facilitator = "0xaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+  const payer = "1111111111111111111111111111111111111111";
+  const recipient = "2222222222222222222222222222222222222222";
+  const proxy = "0x3333333333333333333333333333333333333333";
+  const merchant = "0x4444444444444444444444444444444444444444";
+  const directHash = `0x${"5".repeat(64)}`;
+  const proxyHash = `0x${"6".repeat(64)}`;
+  const word = (value) => value.padStart(64, "0");
+  const topic = (address) => `0x${address.slice(2).padStart(64, "0")}`;
+  const transactions = [
+    {
+      hash: directHash,
+      blockNumber: 10,
+      timestamp: "2026-08-18T00:00:00.000Z",
+      from: facilitator,
+      to: BASE_USDC_ADDRESS,
+      input: `0xcf092995${word(payer)}${word(recipient)}${word("0f4240")}`,
+      success: true,
+    },
+    {
+      hash: proxyHash,
+      blockNumber: 11,
+      timestamp: "2026-08-18T00:00:02.000Z",
+      from: facilitator,
+      to: proxy,
+      input: "0x12345678",
+      success: true,
+    },
+  ];
+  const receiptRpc = async () => ({
+    status: "0x1",
+    transactionHash: proxyHash,
+    logs: [
+      {
+        address: BASE_USDC_ADDRESS,
+        transactionHash: proxyHash,
+        logIndex: "0x1",
+        topics: [ERC20_TRANSFER_TOPIC, topic(`0x${payer}`), topic(proxy)],
+        data: "0x1e8480",
+      },
+      {
+        address: BASE_USDC_ADDRESS,
+        transactionHash: proxyHash,
+        logIndex: "0x2",
+        topics: [ERC20_TRANSFER_TOPIC, topic(proxy), topic(merchant)],
+        data: "0x1d4c00",
+      },
+    ],
+  });
+  const result = await collectX402BlockscoutTransactions({ transactions, receiptRpc });
+  assert.equal(result.directTransactionCount, 1);
+  assert.equal(result.receiptFallbackCount, 1);
+  assert.equal(result.activities.find((row) => row.role === "payer").transactionCount, 2);
+  assert.equal(JSON.stringify(result.activities).includes(payer), false);
+  assert.equal(JSON.stringify(result.activities).includes(proxy.slice(2)), false);
+});
+
+test("terminal identity aggregation never writes raw Base identities", () => {
+  const rawPayer = "0x1111111111111111111111111111111111111111";
+  const rawPayee = "0x2222222222222222222222222222222222222222";
+  const activities = x402IdentityActivitiesFromTransfers([{
+    transactionHash: `0x${"e".repeat(64)}`,
+    from: rawPayer,
+    to: rawPayee,
+    amountRaw: 1_000_000n,
+    logIndex: 0,
+    timestamp: "2026-08-18T00:00:00.000Z",
+    activityDate: "2026-08-18",
+  }]);
+  assert.equal(activities.length, 2);
+  assert.equal(JSON.stringify(activities).includes(rawPayer), false);
+  assert.equal(JSON.stringify(activities).includes(rawPayee), false);
 });
 
 test("MPP attribution memos require the official tag, version, and 32-byte length", () => {

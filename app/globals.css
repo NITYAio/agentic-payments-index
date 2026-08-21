@@ -1696,19 +1696,26 @@ button {
     linear-gradient(180deg, #160d0a, #100a08);
 }
 
-.trustHeader {
+.trustPrimary {
   display: grid;
-  grid-template-columns: minmax(420px, 1.2fr) minmax(330px, 0.8fr);
-  gap: clamp(48px, 8vw, 120px);
-  align-items: end;
-  margin-bottom: 42px;
+  grid-template-columns: minmax(300px, 0.62fr) minmax(620px, 1.38fr);
+  gap: clamp(32px, 5vw, 78px);
+  align-items: start;
+}
+
+.trustHeader {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  min-width: 0;
+  padding-top: 20px;
 }
 
 .trustHeader h2 {
   max-width: 900px;
   margin: 16px 0 0;
   color: var(--cream);
-  font-size: clamp(2.75rem, 5.2vw, 6.6rem);
+  font-size: clamp(3.2rem, 5.4vw, 6.5rem);
   font-weight: 420;
   line-height: 0.94;
   letter-spacing: -0.07em;
@@ -1724,6 +1731,7 @@ button {
   display: grid;
   justify-items: start;
   gap: 20px;
+  margin-top: clamp(34px, 5vw, 78px);
 }
 
 .trustHeaderAside p {
@@ -1874,6 +1882,13 @@ button {
   min-height: 310px;
   margin-top: 12px;
   overflow: visible;
+  cursor: crosshair;
+  touch-action: pan-y;
+}
+
+.trustLiveChart svg:focus-visible {
+  outline: 1px solid rgba(255, 107, 61, 0.7);
+  outline-offset: 5px;
 }
 
 .trustLiveChart svg line {
@@ -1903,6 +1918,47 @@ button {
 }
 .trustMaximum text { fill: var(--cream); }
 .trustLiveChart svg > text.trustAxisLabel { font-size: 10px; }
+
+.trustInspection line {
+  stroke: rgba(244, 239, 232, 0.4) !important;
+  stroke-dasharray: 3 4;
+}
+
+.trustInspection circle.average {
+  fill: var(--orange);
+  stroke: var(--cream);
+  stroke-width: 1.5;
+}
+
+.trustInspection circle.median {
+  fill: var(--mint);
+  stroke: #160d0a;
+  stroke-width: 1.5;
+}
+
+.trustInspection rect {
+  fill: rgba(18, 11, 9, 0.97);
+  stroke: rgba(244, 239, 232, 0.2);
+  stroke-width: 1;
+}
+
+.trustInspection text {
+  fill: #cbbeb7;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 10px;
+}
+
+.trustInspection text.date {
+  fill: var(--cream);
+  font-weight: 650;
+}
+
+.trustChartInstruction {
+  margin: -2px 0 12px;
+  color: #766a64;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.58rem;
+}
 
 .trustScopeNote {
   margin: 2px 0 0;
@@ -2306,7 +2362,17 @@ button {
 
 .directoryView button.active { background: var(--cream); color: var(--ink); }
 .directoryView button:disabled { cursor: not-allowed; opacity: 0.42; }
-.directorySearch { width: min(520px, 100%); }
+.directorySearch {
+  position: relative;
+  width: min(620px, 100%);
+}
+
+.directorySearchField {
+  position: relative;
+  flex: 1;
+  min-width: 0;
+}
+
 .directorySearch input {
   width: 100%;
   min-height: 42px;
@@ -2320,6 +2386,68 @@ button {
 }
 .directorySearch input:focus { border-color: rgba(255, 107, 61, 0.45); }
 .directorySearch button { border: 1px solid var(--line); }
+
+.serviceSuggestions {
+  position: absolute;
+  z-index: 30;
+  top: calc(100% + 8px);
+  right: 0;
+  left: 0;
+  overflow: hidden;
+  margin: 0;
+  padding: 6px;
+  border: 1px solid var(--line-bright);
+  border-radius: 16px;
+  background: rgba(18, 11, 9, 0.985);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.48);
+  list-style: none;
+}
+
+.serviceSuggestions li { margin: 0; }
+
+.serviceSuggestions li > button {
+  display: flex;
+  width: 100%;
+  min-height: 52px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 9px 11px;
+  border: 0;
+  border-radius: 11px;
+  text-align: left;
+}
+
+.serviceSuggestions li > button:hover,
+.serviceSuggestions li > button.active,
+.serviceSuggestions li[aria-selected="true"] > button {
+  background: rgba(255, 107, 61, 0.1);
+  color: var(--cream);
+}
+
+.serviceSuggestions li > button span { min-width: 0; }
+.serviceSuggestions strong,
+.serviceSuggestions small { display: block; }
+.serviceSuggestions strong { color: var(--cream); font: 600 0.72rem/1.3 var(--font-geist-sans), sans-serif; }
+.serviceSuggestions small {
+  overflow: hidden;
+  margin-top: 3px;
+  color: #756963;
+  font: 0.55rem/1.3 var(--font-geist-mono), monospace;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.serviceSuggestions i {
+  color: var(--mint);
+  font-style: normal;
+  font-size: 0.52rem;
+}
+.suggestionStatus {
+  padding: 13px 11px;
+  color: #756963;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.58rem;
+}
 
 .tableWrap {
   overflow-x: auto;
@@ -2454,6 +2582,71 @@ td:first-child {
 .latest {
   color: #89938d;
 }
+
+.buyerConcentration {
+  display: inline-flex;
+  align-items: center;
+}
+
+.buyerConcentration > button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 7px 9px;
+  border: 1px solid rgba(255, 107, 61, 0.2);
+  border-radius: 99px;
+  background: rgba(255, 107, 61, 0.05);
+  color: var(--cream);
+  font: inherit;
+  cursor: help;
+}
+
+.buyerConcentration > button span {
+  color: #83766e;
+  font-size: 0.56rem;
+}
+
+.buyerConcentrationPopover {
+  position: fixed;
+  z-index: 80;
+  display: grid;
+  width: 276px;
+  gap: 9px;
+  padding: 16px;
+  border: 1px solid var(--line-bright);
+  border-radius: 16px;
+  background: rgba(18, 11, 9, 0.985);
+  box-shadow: 0 24px 80px rgba(0, 0, 0, 0.55);
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(-5px);
+  transition: opacity 140ms ease, transform 140ms ease;
+}
+
+.buyerConcentration:hover .buyerConcentrationPopover,
+.buyerConcentration:focus-within .buyerConcentrationPopover,
+.buyerConcentration.open .buyerConcentrationPopover {
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateY(0);
+}
+
+.buyerConcentrationPopover > strong {
+  margin-bottom: 3px;
+  color: var(--cream);
+  font-family: var(--font-geist-sans), sans-serif;
+  font-size: 0.72rem;
+}
+
+.buyerConcentrationPopover > span {
+  display: flex;
+  justify-content: space-between;
+  gap: 14px;
+  color: #8f817a;
+}
+
+.buyerConcentrationPopover i { font-style: normal; }
+.buyerConcentrationPopover b { color: var(--cream); font-weight: 600; }
 
 .placeholderRow {
   opacity: 0.45;
@@ -3553,7 +3746,7 @@ footer > span {
     grid-template-columns: repeat(2, 1fr);
   }
 
-  .trustHeader { grid-template-columns: 1fr; }
+  .trustPrimary { grid-template-columns: 1fr; }
   .trustLadder { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 
   .protocolComparison {
@@ -3796,8 +3989,9 @@ footer > span {
   }
 
   .trustBarometer { padding: 72px 20px; }
-  .trustHeader { gap: 30px; }
+  .trustHeader { padding-top: 0; }
   .trustHeader h2 { font-size: clamp(2.8rem, 13vw, 4.6rem); }
+  .trustHeaderAside { margin-top: 30px; }
   .trustAnticipation { min-height: 330px; padding-inline: 16px; }
   .trustGateCopy { width: 82%; padding: 18px; }
   .trustLadder { grid-template-columns: 1fr; }
