@@ -338,8 +338,8 @@ export async function POST(request: Request) {
     if (rangeEnd <= rangeStart) throw new Error("Range end must be after range start.");
     const queryHash = cleanKey(body.queryHash, "Query hash", 128).toLowerCase();
     const inputRowCount = count(body.inputRowCount, "Input row count");
-    if (!Array.isArray(body.metrics) || body.metrics.length < 1 || body.metrics.length > 400) {
-      throw new Error("Each run must include between 1 and 400 daily metric rows.");
+    if (!Array.isArray(body.metrics) || body.metrics.length < 1 || body.metrics.length > 1_000) {
+      throw new Error("Each run must include between 1 and 1,000 daily metric rows.");
     }
     const metrics = body.metrics.map(parseMetric);
     const windowSummary = parseWindowMetric(body.windowSummary);

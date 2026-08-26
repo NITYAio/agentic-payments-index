@@ -15,6 +15,7 @@ import {
   buildX402MultiLegSql,
   buildX402WindowSql,
   createJsonRpcClient,
+  createX402EventPaymentAccumulator,
   fillDailyMetricRange,
   isMppAttributionMemo,
   normalizeX402DailyRows,
@@ -71,6 +72,7 @@ test("x402 event aggregation counts terminal payments once and gates ticket-size
   const result = aggregateX402EventPayments({
     from,
     to,
+    includeDistribution: true,
     payments: [
       {
         timestamp: "2026-08-18T01:00:00.000Z",
@@ -112,6 +114,51 @@ test("x402 event aggregation counts terminal payments once and gates ticket-size
   assert.equal(result.windowSummary.excludedZeroCount, 1);
   assert.equal(result.windowSummary.excludedSelfCount, 1);
   assert.equal(result.windowSummary.overOneCount, 1);
+  assert.deepEqual(result.metrics[0].trustAmountHistogram, [
+    { amountUsdMicros: "2000000", count: 1 },
+  ]);
+  assert.deepEqual(result.windowSummary.trustAmountHistogram, [
+    { amountUsdMicros: "2000000", count: 1 },
+  ]);
+});
+
+test("streamed x402 event aggregation matches one-shot aggregation", () => {
+  const from = new Date("2026-08-18T00:00:00.000Z");
+  const to = new Date("2026-08-19T00:00:00.000Z");
+  const payments = [
+    {
+      timestamp: "2026-08-18T01:00:00.000Z",
+      from: "0x1111111111111111111111111111111111111111",
+      to: "0x2222222222222222222222222222222222222222",
+      amountRaw: 2_000_000n,
+      recipientAmountRaw: 1_900_000n,
+      grossVolumeRaw: 3_900_000n,
+      rawLegCount: 2,
+    },
+    {
+      timestamp: "2026-08-18T02:00:00.000Z",
+      from: "0x1111111111111111111111111111111111111111",
+      to: "0x3333333333333333333333333333333333333333",
+      amountRaw: 0n,
+    },
+    {
+      timestamp: "2026-08-18T03:00:00.000Z",
+      from: "0x4444444444444444444444444444444444444444",
+      to: "0x4444444444444444444444444444444444444444",
+      amountRaw: 500_000n,
+    },
+    {
+      timestamp: "2026-08-18T04:00:00.000Z",
+      from: "0x5555555555555555555555555555555555555555",
+      to: "0x2222222222222222222222222222222222222222",
+      amountRaw: 4_000_000n,
+    },
+  ];
+  const expected = aggregateX402EventPayments({ payments, from, to, includeDistribution: true });
+  const accumulator = createX402EventPaymentAccumulator({ from, to, includeDistribution: true });
+  accumulator.add(payments.slice(0, 2));
+  accumulator.add(payments.slice(2));
+  assert.deepEqual(accumulator.finish(), expected);
 });
 
 test("Tempo log queries filter at the RPC layer to the two supported USD assets", () => {
@@ -487,6 +534,10 @@ test("Blockscout transactions decode direct authorization and proxy terminal ide
   const result = await collectX402BlockscoutTransactions({ transactions, receiptRpc });
   assert.equal(result.directTransactionCount, 1);
   assert.equal(result.receiptFallbackCount, 1);
+  assert.equal(result.transferCount, 3);
+  assert.equal(result.paymentCount, 2);
+  assert.equal(result.payments.length, 2);
+  assert.equal(result.payments.find((payment) => payment.transactionHash === proxyHash).to, merchant);
   assert.equal(result.activities.find((row) => row.role === "payer").transactionCount, 2);
   assert.equal(JSON.stringify(result.activities).includes(payer), false);
   assert.equal(JSON.stringify(result.activities).includes(proxy.slice(2)), false);

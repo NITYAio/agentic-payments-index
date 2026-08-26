@@ -933,7 +933,69 @@ export function aggregateX402TerminalPayments({ singleRows, multiLegRows, from, 
   };
 }
 
-export function aggregateX402EventPayments({ payments, from, to }) {
+function trustAmountHistogram(amounts) {
+  const counts = new Map();
+  for (const value of amounts) {
+    const amount = BigInt(value).toString();
+    counts.set(amount, (counts.get(amount) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .sort(([left], [right]) => {
+      const leftAmount = BigInt(left);
+      const rightAmount = BigInt(right);
+      return leftAmount < rightAmount ? -1 : leftAmount > rightAmount ? 1 : 0;
+    })
+    .map(([amountUsdMicros, count]) => ({ amountUsdMicros, count }));
+}
+
+function summarizeTrustPaymentHistogram(histogram, excludedZeroCount, excludedSelfCount) {
+  const rows = [...histogram.entries()]
+    .map(([amount, count]) => ({ amount: BigInt(amount), count }))
+    .sort((left, right) => left.amount < right.amount ? -1 : left.amount > right.amount ? 1 : 0);
+  const qualifyingPaymentCount = rows.reduce((total, row) => total + row.count, 0);
+  const qualifyingVolume = rows.reduce(
+    (total, row) => total + row.amount * BigInt(row.count),
+    0n,
+  );
+  const amountAt = (position) => {
+    let cursor = 0;
+    for (const row of rows) {
+      cursor += row.count;
+      if (position < cursor) return row.amount;
+    }
+    return 0n;
+  };
+  const lower = qualifyingPaymentCount === 0
+    ? 0n
+    : amountAt(Math.floor((qualifyingPaymentCount - 1) / 2));
+  const upper = qualifyingPaymentCount === 0
+    ? 0n
+    : amountAt(Math.floor(qualifyingPaymentCount / 2));
+  const above = (dollars) => rows.reduce(
+    (total, row) => total + (row.amount > BigInt(dollars) * 1_000_000n ? row.count : 0),
+    0,
+  );
+  return {
+    qualifyingPaymentCount,
+    qualifyingVolumeUsdMicros: safeNumber(
+      qualifyingVolume,
+      "qualifying x402 payment volume",
+    ),
+    medianPaymentUsdMicros: safeNumber((lower + upper) / 2n, "median x402 payment value"),
+    maxPaymentUsdMicros: safeNumber(
+      rows.at(-1)?.amount ?? 0n,
+      "maximum x402 payment value",
+    ),
+    overOneCount: above(1),
+    overTenCount: above(10),
+    overHundredCount: above(100),
+    overThousandCount: above(1_000),
+    excludedZeroCount,
+    excludedSelfCount,
+  };
+}
+
+export function aggregateX402EventPayments({ payments, from, to, includeDistribution = false }) {
   if (!(from instanceof Date) || !(to instanceof Date) || to <= from) {
     throw new Error("A valid x402 event aggregation range is required.");
   }
@@ -1037,6 +1099,9 @@ export function aggregateX402EventPayments({ payments, from, to }) {
         value.excludedZeroCount,
         value.excludedSelfCount,
       ),
+      ...(includeDistribution
+        ? { trustAmountHistogram: trustAmountHistogram(value.trustAmounts) }
+        : {}),
       evidenceLevel: "deterministic",
       isAdjusted: false,
       limitation,
@@ -1065,11 +1130,196 @@ export function aggregateX402EventPayments({ payments, from, to }) {
         windowExcludedZeroCount,
         windowExcludedSelfCount,
       ),
+      ...(includeDistribution
+        ? { trustAmountHistogram: trustAmountHistogram(windowTrustAmounts) }
+        : {}),
       evidenceLevel: "deterministic",
       isAdjusted: false,
       limitation,
     },
   };
+}
+
+// The SQD history collector can observe millions of dense Base transactions in a
+// single day. This accumulator preserves the exact public aggregation while
+// retaining only identity sets and an amount histogram between stream batches.
+// Raw transactions, receipts, transfers, and payment objects can therefore be
+// released as soon as each batch has been classified.
+export function createX402EventPaymentAccumulator({
+  from,
+  to,
+  includeDistribution = false,
+}) {
+  if (!(from instanceof Date) || !(to instanceof Date) || to <= from) {
+    throw new Error("A valid x402 event aggregation range is required.");
+  }
+
+  const byDate = new Map();
+  const windowBuyers = new Set();
+  const windowSellers = new Set();
+  const windowTrustHistogram = new Map();
+  let windowPaymentVolumeRaw = 0n;
+  let windowRecipientVolumeRaw = 0n;
+  let windowGrossVolumeRaw = 0n;
+  let windowRawTransferCount = 0;
+  let windowExcludedZeroCount = 0;
+  let windowExcludedSelfCount = 0;
+  let finished = false;
+
+  const day = (activityDate) => {
+    const value = byDate.get(activityDate) ?? {
+      activityDate,
+      transactionCount: 0,
+      rawTransferCount: 0,
+      paymentVolumeRaw: 0n,
+      recipientVolumeRaw: 0n,
+      grossVolumeRaw: 0n,
+      buyers: new Set(),
+      sellers: new Set(),
+      trustHistogram: new Map(),
+      excludedZeroCount: 0,
+      excludedSelfCount: 0,
+    };
+    byDate.set(activityDate, value);
+    return value;
+  };
+
+  const incrementHistogram = (histogram, amount) => {
+    const key = amount.toString();
+    histogram.set(key, (histogram.get(key) ?? 0) + 1);
+  };
+
+  function add(payments) {
+    if (finished) throw new Error("The x402 event accumulator has already been finalized.");
+    if (!Array.isArray(payments)) throw new Error("x402 event payments must be an array.");
+    for (const payment of payments) {
+      const timestamp = new Date(payment.timestamp);
+      if (!Number.isFinite(timestamp.getTime())) throw new Error("Invalid x402 event timestamp.");
+      if (timestamp < from || timestamp >= to) continue;
+      const activityDate = timestamp.toISOString().slice(0, 10);
+      const amountRaw = BigInt(payment.amountRaw);
+      const recipientAmountRaw = BigInt(payment.recipientAmountRaw ?? payment.amountRaw);
+      const grossVolumeRaw = BigInt(payment.grossVolumeRaw ?? payment.amountRaw);
+      const rawLegCount = Number(payment.rawLegCount ?? 1);
+      if (!Number.isSafeInteger(rawLegCount) || rawLegCount < 1) {
+        throw new Error("Invalid x402 raw transfer count.");
+      }
+      const buyer = String(payment.from ?? "").toLowerCase();
+      const seller = String(payment.to ?? "").toLowerCase();
+      if (!/^0x[0-9a-f]{40}$/.test(buyer) || !/^0x[0-9a-f]{40}$/.test(seller)) {
+        throw new Error("Invalid x402 event identity.");
+      }
+
+      const current = day(activityDate);
+      current.transactionCount += 1;
+      current.rawTransferCount += rawLegCount;
+      current.paymentVolumeRaw += amountRaw;
+      current.recipientVolumeRaw += recipientAmountRaw;
+      current.grossVolumeRaw += grossVolumeRaw;
+      current.buyers.add(buyer);
+      current.sellers.add(seller);
+      windowBuyers.add(buyer);
+      windowSellers.add(seller);
+      windowPaymentVolumeRaw += amountRaw;
+      windowRecipientVolumeRaw += recipientAmountRaw;
+      windowGrossVolumeRaw += grossVolumeRaw;
+      windowRawTransferCount += rawLegCount;
+
+      if (buyer === seller) {
+        current.excludedSelfCount += 1;
+        windowExcludedSelfCount += 1;
+      } else if (amountRaw === 0n) {
+        current.excludedZeroCount += 1;
+        windowExcludedZeroCount += 1;
+      } else {
+        incrementHistogram(current.trustHistogram, amountRaw);
+        incrementHistogram(windowTrustHistogram, amountRaw);
+      }
+    }
+  }
+
+  function finish() {
+    if (finished) throw new Error("The x402 event accumulator has already been finalized.");
+    finished = true;
+    const limitation =
+      "Base USDC settlements detected from x402 authorization, proxy-settlement, and batch-claim events. " +
+      "Receive-then-forward chains count once at the payer's original amount and resolve to the terminal recipient. " +
+      "Zero-value and self-payments are excluded from ticket-size metrics. Unresolved ownership, non-Base, and non-USDC activity remain outside coverage.";
+    const distribution = (histogram) => [...histogram.entries()]
+      .sort(([left], [right]) => {
+        const leftAmount = BigInt(left);
+        const rightAmount = BigInt(right);
+        return leftAmount < rightAmount ? -1 : leftAmount > rightAmount ? 1 : 0;
+      })
+      .map(([amountUsdMicros, count]) => ({ amountUsdMicros, count }));
+    const metrics = [...byDate.values()]
+      .map((value) => ({
+        activityDate: value.activityDate,
+        measurementUnit: "onchain_settlement",
+        transactionCount: value.transactionCount,
+        settlementCount: value.transactionCount,
+        rawTransferCount: value.rawTransferCount,
+        volumeUsdMicros: safeNumber(value.paymentVolumeRaw, "x402 event payment USD volume"),
+        recipientVolumeUsdMicros: safeNumber(
+          value.recipientVolumeRaw,
+          "x402 event recipient USD volume",
+        ),
+        grossVolumeUsdMicros: safeNumber(value.grossVolumeRaw, "x402 event gross USD volume"),
+        buyerCount: value.buyers.size,
+        sellerCount: value.sellers.size,
+        ...summarizeTrustPaymentHistogram(
+          value.trustHistogram,
+          value.excludedZeroCount,
+          value.excludedSelfCount,
+        ),
+        ...(includeDistribution
+          ? { trustAmountHistogram: distribution(value.trustHistogram) }
+          : {}),
+        evidenceLevel: "deterministic",
+        isAdjusted: false,
+        limitation,
+      }))
+      .sort((left, right) => left.activityDate.localeCompare(right.activityDate));
+
+    return {
+      metrics,
+      windowSummary: {
+        rangeStart: from.toISOString(),
+        rangeEnd: to.toISOString(),
+        measurementUnit: "onchain_settlement",
+        transactionCount: metrics.reduce((total, metric) => total + metric.transactionCount, 0),
+        settlementCount: metrics.reduce((total, metric) => total + metric.settlementCount, 0),
+        rawTransferCount: windowRawTransferCount,
+        volumeUsdMicros: safeNumber(
+          windowPaymentVolumeRaw,
+          "x402 event payment window USD volume",
+        ),
+        recipientVolumeUsdMicros: safeNumber(
+          windowRecipientVolumeRaw,
+          "x402 event recipient window USD volume",
+        ),
+        grossVolumeUsdMicros: safeNumber(
+          windowGrossVolumeRaw,
+          "x402 event gross USD volume",
+        ),
+        buyerCount: windowBuyers.size,
+        sellerCount: windowSellers.size,
+        ...summarizeTrustPaymentHistogram(
+          windowTrustHistogram,
+          windowExcludedZeroCount,
+          windowExcludedSelfCount,
+        ),
+        ...(includeDistribution
+          ? { trustAmountHistogram: distribution(windowTrustHistogram) }
+          : {}),
+        evidenceLevel: "deterministic",
+        isAdjusted: false,
+        limitation,
+      },
+    };
+  }
+
+  return { add, finish };
 }
 
 export function normalizeX402DailyRows(rows) {

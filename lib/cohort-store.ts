@@ -144,6 +144,8 @@ export async function loadCohortMatrix(
   now = new Date(),
 ): Promise<CohortMatrix> {
   const d1 = await getD1();
+  const snapshot = await loadSnapshotMatrix(d1, request);
+  if (snapshot) return snapshot;
   if (request.role === "payee" && request.protocol !== "mpp") {
     const correctedCoverage = await d1
       .prepare(
@@ -172,8 +174,6 @@ export async function loadCohortMatrix(
       } satisfies CohortMatrix;
     }
   }
-  const snapshot = await loadSnapshotMatrix(d1, request);
-  if (snapshot) return snapshot;
   const protocolClause = request.protocol === "all" ? "" : "AND a.protocol = ?";
   const segmentProtocolClause = request.protocol === "all" ? "" : "AND protocol = ?";
   const activityParameters =

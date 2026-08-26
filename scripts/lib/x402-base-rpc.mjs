@@ -30,7 +30,7 @@ function isBillingResponse(status, body) {
 function isRetryableRpcError(status, body) {
   if (status === 408 || status === 429 || status >= 500) return true;
   const text = typeof body === "string" ? body : body?.error?.message ?? "";
-  return /rate.?limit|too many requests|throughput|compute units?|request timeout|timed? out|temporar(?:y|ily)|try again/i.test(text);
+  return /rate.?limit|request limit reached|too many requests|throughput|compute units?|request timeout|timed? out|temporar(?:y|ily)|try again/i.test(text);
 }
 
 function networkCauseLabel(cause) {
@@ -51,15 +51,25 @@ export function createBudgetSafeRpcClient({
   if (!url) throw new Error("A Base JSON-RPC URL is required.");
   let id = 0;
   let queue = Promise.resolve();
-  let lastRequestAt = 0;
+  let nextRequestAt = 0;
+
+  async function reserveRequestUnits(units = 1) {
+    const now = Date.now();
+    const waitForSlot = Math.max(0, nextRequestAt - now);
+    if (waitForSlot > 0) await sleepImpl(waitForSlot);
+    const startedAt = Date.now();
+    // Providers such as QuickNode count every JSON-RPC entry inside an HTTP
+    // batch against the per-second allowance. Reserve time for every entry,
+    // not just for the outer HTTP request, so batching cannot accidentally
+    // burst through a free-plan limit.
+    nextRequestAt = Math.max(startedAt, nextRequestAt) + minDelayMs * units;
+  }
 
   function request(method, params) {
     const requestId = ++id;
     const run = queue.then(async () => {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const waitForSlot = Math.max(0, lastRequestAt + minDelayMs - Date.now());
-        if (waitForSlot > 0) await sleepImpl(waitForSlot);
-        lastRequestAt = Date.now();
+        await reserveRequestUnits(1);
         let response;
         try {
           response = await fetchImpl(url, {
@@ -128,9 +138,7 @@ export function createBudgetSafeRpcClient({
     const ids = new Map(entries.map((entry, index) => [entry.id, index]));
     const run = queue.then(async () => {
       for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-        const waitForSlot = Math.max(0, lastRequestAt + minDelayMs - Date.now());
-        if (waitForSlot > 0) await sleepImpl(waitForSlot);
-        lastRequestAt = Date.now();
+        await reserveRequestUnits(entries.length);
         let response;
         try {
           response = await fetchImpl(url, {

@@ -126,7 +126,9 @@ export async function collectX402BaseEventRange({
   to,
   preferredChunk = 10_000,
   blockBatchSize = 3,
+  receiptMode = "block",
   tokenAddress = BASE_USDC_ADDRESS,
+  includeDistribution = false,
 }) {
   const [authorizationLogs, proxyLogs, claimedLogs] = await Promise.all([
     logsRange(rpc, { address: tokenAddress, topics: [X402_AUTHORIZATION_USED_TOPIC] }, fromBlock, toBlockExclusive, preferredChunk),
@@ -214,14 +216,72 @@ export async function collectX402BaseEventRange({
     byBlock.set(blockNumberHex, rows);
   }
   const blockJobs = [...byBlock.entries()];
-  let nextBlock = 0;
-  let completedBlocks = 0;
-  async function blockWorker(workerIndex) {
-    const blockRpc = blockRpcs[workerIndex % blockRpcs.length];
-    while (nextBlock < blockJobs.length) {
-      const index = nextBlock;
-      const batch = blockJobs.slice(index, index + blockBatchSize);
-      nextBlock += batch.length;
+
+  async function timestampForSignals(signalLogs, receipt) {
+    const blockTimestamp = signalLogs.find((log) => log.blockTimestamp)?.blockTimestamp;
+    if (blockTimestamp) {
+      return new Date(Number.parseInt(blockTimestamp, 16) * 1_000).toISOString();
+    }
+    const blockNumberHex = signalLogs[0]?.blockNumber ?? receipt?.blockNumber;
+    // Timestamp lookups use the log provider rather than the receipt provider.
+    // This keeps QuickNode's small request budget focused on the receipt data
+    // that the public log provider cannot supply reliably.
+    const block = await rpc("eth_getBlockByNumber", [blockNumberHex, false]);
+    if (!block?.timestamp) throw new Error(`Base block ${blockNumberHex} has no timestamp.`);
+    return new Date(Number.parseInt(block.timestamp, 16) * 1_000).toISOString();
+  }
+
+  if (receiptMode === "transaction") {
+    const transactionJobs = [...grouped.entries()];
+    let nextTransaction = 0;
+    let completedTransactions = 0;
+    async function transactionWorker(workerIndex) {
+      const blockRpc = blockRpcs[workerIndex % blockRpcs.length];
+      while (nextTransaction < transactionJobs.length) {
+        const index = nextTransaction;
+        const batch = transactionJobs.slice(index, index + blockBatchSize);
+        nextTransaction += batch.length;
+        const results = await blockRpc.batch(batch.map(([transactionHash]) => ({
+          method: "eth_getTransactionReceipt",
+          params: [transactionHash],
+        })));
+        for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+          const [transactionHash, signalLogs] = batch[batchIndex];
+          const receipt = results[batchIndex];
+          if (!receipt) throw new Error(`Base receipt ${transactionHash} was not found.`);
+          const timestamp = await timestampForSignals(signalLogs, receipt);
+          let transaction = { from: receipt.from, input: "0x" };
+          if (
+            signalLogs.some((log) =>
+              String(log.address).toLowerCase() === X402_BATCH_SETTLEMENT,
+            )
+          ) {
+            transaction = await blockRpc("eth_getTransactionByHash", [transactionHash]);
+          }
+          processTransaction(transactionHash, signalLogs, transaction, receipt, timestamp);
+        }
+        completedTransactions += batch.length;
+        if (
+          completedTransactions % 500 < batch.length ||
+          completedTransactions === transactionJobs.length
+        ) {
+          process.stderr.write(
+            `Resolved x402 event transactions ${completedTransactions}/${transactionJobs.length}; ` +
+              `${payments.length.toLocaleString()} terminal payments\n`,
+          );
+        }
+      }
+    }
+    await Promise.all(blockRpcs.map((_, index) => transactionWorker(index)));
+  } else if (receiptMode === "block") {
+    let nextBlock = 0;
+    let completedBlocks = 0;
+    async function blockWorker(workerIndex) {
+      const blockRpc = blockRpcs[workerIndex % blockRpcs.length];
+      while (nextBlock < blockJobs.length) {
+        const index = nextBlock;
+        const batch = blockJobs.slice(index, index + blockBatchSize);
+        nextBlock += batch.length;
       // Base log responses include blockTimestamp. That lets us resolve the
       // active payment transactions from receipts alone instead of downloading
       // every full block and every transaction in it. The free dRPC tier permits
@@ -245,15 +305,7 @@ export async function collectX402BaseEventRange({
         );
         for (const [transactionHash, signalLogs] of transactionsWithSignals) {
           const receipt = receiptMap.get(transactionHash);
-          const blockTimestamp = signalLogs.find((log) => log.blockTimestamp)?.blockTimestamp;
-          let timestamp;
-          if (blockTimestamp) {
-            timestamp = new Date(Number.parseInt(blockTimestamp, 16) * 1_000).toISOString();
-          } else {
-            const block = await blockRpc("eth_getBlockByNumber", [blockNumberHex, false]);
-            if (!block?.timestamp) throw new Error(`Base block ${blockNumberHex} has no timestamp.`);
-            timestamp = new Date(Number.parseInt(block.timestamp, 16) * 1_000).toISOString();
-          }
+          const timestamp = await timestampForSignals(signalLogs, receipt);
           let transaction = receipt ? { from: receipt.from, input: "0x" } : null;
           if (
             signalLogs.some((log) =>
@@ -271,19 +323,184 @@ export async function collectX402BaseEventRange({
           );
         }
       }
-      completedBlocks += batch.length;
-      if (completedBlocks % 500 < batch.length || completedBlocks === blockJobs.length) {
-        process.stderr.write(
-          `Resolved x402 event blocks ${completedBlocks}/${blockJobs.length}; ` +
-            `${payments.length.toLocaleString()} terminal payments\n`,
-        );
+        completedBlocks += batch.length;
+        if (completedBlocks % 500 < batch.length || completedBlocks === blockJobs.length) {
+          process.stderr.write(
+            `Resolved x402 event blocks ${completedBlocks}/${blockJobs.length}; ` +
+              `${payments.length.toLocaleString()} terminal payments\n`,
+          );
+        }
       }
     }
+    await Promise.all(blockRpcs.map((_, index) => blockWorker(index)));
+  } else if (receiptMode === "block-transactions") {
+    // AuthorizationUsed is emitted for ordinary USDC authorizations as well as
+    // x402 payments. Reading the full transaction list for each signal-bearing
+    // block lets us filter by facilitator sender before requesting receipts.
+    // This turns hundreds of receipt lookups into only the handful of receipts
+    // that can actually be x402 payments.
+    let nextBlock = 0;
+    let completedBlocks = 0;
+    async function blockTransactionWorker(workerIndex) {
+      const blockRpc = blockRpcs[workerIndex % blockRpcs.length];
+      while (nextBlock < blockJobs.length) {
+        const index = nextBlock;
+        const batch = blockJobs.slice(index, index + blockBatchSize);
+        nextBlock += batch.length;
+        const blocks = await blockRpc.batch(batch.map(([blockNumberHex]) => ({
+          method: "eth_getBlockByNumber",
+          params: [blockNumberHex, true],
+        })));
+        const candidates = [];
+        for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+          const [blockNumberHex, transactionsWithSignals] = batch[batchIndex];
+          const block = blocks[batchIndex];
+          if (!block || !Array.isArray(block.transactions) || !block.timestamp) {
+            throw new Error(`Base transaction block ${blockNumberHex} was incomplete.`);
+          }
+          const timestamp = new Date(Number.parseInt(block.timestamp, 16) * 1_000).toISOString();
+          const transactionDate = timestamp.slice(0, 10);
+          const activeFacilitators = new Set(
+            facilitatorRegistry
+              .filter((entry) => entry.firstSeen <= transactionDate)
+              .map((entry) => entry.address.toLowerCase()),
+          );
+          const transactionMap = new Map(
+            block.transactions.map((transaction) => [
+              String(transaction.hash ?? "").toLowerCase(),
+              transaction,
+            ]),
+          );
+          for (const [transactionHash, signalLogs] of transactionsWithSignals) {
+            const transaction = transactionMap.get(transactionHash);
+            if (!transaction) {
+              throw new Error(`Base transaction ${transactionHash} was absent from ${blockNumberHex}.`);
+            }
+            const hasAuthorization = signalLogs.some(
+              (log) => String(log.address).toLowerCase() === tokenAddress.toLowerCase(),
+            );
+            if (
+              hasAuthorization &&
+              !activeFacilitators.has(String(transaction.from ?? "").toLowerCase())
+            ) {
+              filteredTransactions += 1;
+              continue;
+            }
+            candidates.push({ transactionHash, signalLogs, transaction, timestamp });
+          }
+        }
+        if (candidates.length) {
+          const receipts = await blockRpc.batch(candidates.map(({ transactionHash }) => ({
+            method: "eth_getTransactionReceipt",
+            params: [transactionHash],
+          })));
+          for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+            const candidate = candidates[candidateIndex];
+            const receipt = receipts[candidateIndex];
+            if (!receipt) throw new Error(`Base receipt ${candidate.transactionHash} was not found.`);
+            processTransaction(
+              candidate.transactionHash,
+              candidate.signalLogs,
+              candidate.transaction,
+              receipt,
+              candidate.timestamp,
+            );
+          }
+        }
+        completedBlocks += batch.length;
+        if (completedBlocks % 500 < batch.length || completedBlocks === blockJobs.length) {
+          process.stderr.write(
+            `Resolved x402 signal blocks ${completedBlocks}/${blockJobs.length}; ` +
+              `${payments.length.toLocaleString()} terminal payments\n`,
+          );
+        }
+      }
+    }
+    await Promise.all(blockRpcs.map((_, index) => blockTransactionWorker(index)));
+  } else if (receiptMode === "transaction-filter") {
+    // AuthorizationUsed is a common USDC event and most matching logs are not
+    // x402 payments. Resolve only each transaction's lightweight envelope
+    // first, filter by the known facilitator sender, and request receipts only
+    // for the small surviving set. This follows the provider-recommended
+    // eth_getLogs + sender-resolution path without trace_filter or full blocks.
+    const transactionJobs = [...grouped.entries()];
+    let nextTransaction = 0;
+    let completedTransactions = 0;
+    async function transactionFilterWorker(workerIndex) {
+      const blockRpc = blockRpcs[workerIndex % blockRpcs.length];
+      while (nextTransaction < transactionJobs.length) {
+        const index = nextTransaction;
+        const batch = transactionJobs.slice(index, index + blockBatchSize);
+        nextTransaction += batch.length;
+        const transactions = await blockRpc.batch(batch.map(([transactionHash]) => ({
+          method: "eth_getTransactionByHash",
+          params: [transactionHash],
+        })));
+        const candidates = [];
+        for (let batchIndex = 0; batchIndex < batch.length; batchIndex += 1) {
+          const [transactionHash, signalLogs] = batch[batchIndex];
+          const transaction = transactions[batchIndex];
+          if (!transaction) throw new Error(`Base transaction ${transactionHash} was not found.`);
+          const hasAuthorization = signalLogs.some(
+            (log) => String(log.address).toLowerCase() === tokenAddress.toLowerCase(),
+          );
+          if (hasAuthorization) {
+            // The backfill slices never cross a UTC day, so the slice start is
+            // sufficient for the date-granular facilitator activation test.
+            // The exact block timestamp is still resolved for retained rows.
+            const transactionDate = from
+              ? new Date(from).toISOString().slice(0, 10)
+              : (await timestampForSignals(signalLogs)).slice(0, 10);
+            const activeFacilitators = new Set(
+              facilitatorRegistry
+                .filter((entry) => entry.firstSeen <= transactionDate)
+                .map((entry) => entry.address.toLowerCase()),
+            );
+            if (!activeFacilitators.has(String(transaction.from ?? "").toLowerCase())) {
+              filteredTransactions += 1;
+              continue;
+            }
+          }
+          candidates.push({ transactionHash, signalLogs, transaction });
+        }
+        if (candidates.length) {
+          const receipts = await blockRpc.batch(candidates.map(({ transactionHash }) => ({
+            method: "eth_getTransactionReceipt",
+            params: [transactionHash],
+          })));
+          for (let candidateIndex = 0; candidateIndex < candidates.length; candidateIndex += 1) {
+            const candidate = candidates[candidateIndex];
+            const receipt = receipts[candidateIndex];
+            if (!receipt) throw new Error(`Base receipt ${candidate.transactionHash} was not found.`);
+            const timestamp = await timestampForSignals(candidate.signalLogs, receipt);
+            processTransaction(
+              candidate.transactionHash,
+              candidate.signalLogs,
+              candidate.transaction,
+              receipt,
+              timestamp,
+            );
+          }
+        }
+        completedTransactions += batch.length;
+        if (
+          completedTransactions % 500 < batch.length ||
+          completedTransactions === transactionJobs.length
+        ) {
+          process.stderr.write(
+            `Filtered x402 signal transactions ${completedTransactions}/${transactionJobs.length}; ` +
+              `${payments.length.toLocaleString()} terminal payments\n`,
+          );
+        }
+      }
+    }
+    await Promise.all(blockRpcs.map((_, index) => transactionFilterWorker(index)));
+  } else {
+    throw new Error(`Unsupported x402 receipt mode: ${receiptMode}.`);
   }
-  await Promise.all(blockRpcs.map((_, index) => blockWorker(index)));
 
   const aggregate = from && to
-    ? aggregateX402EventPayments({ payments, from, to })
+    ? aggregateX402EventPayments({ payments, from, to, includeDistribution })
     : null;
 
   return {
@@ -294,6 +511,7 @@ export async function collectX402BaseEventRange({
     transactionCount: grouped.size,
     activeBlockCount: blockJobs.length,
     blockBatchSize,
+    receiptMode,
     filteredTransactions,
     unresolvedBatchClaims,
     rawLegCount,

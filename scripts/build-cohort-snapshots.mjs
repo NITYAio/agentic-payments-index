@@ -2,6 +2,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
+import { loadIdentityManifest } from "./lib/identity-manifest.mjs";
 
 function argumentsFrom(values) {
   const options = {};
@@ -36,17 +37,17 @@ function previousCompleteMonth(now) {
 }
 
 async function loadManifest(pathValue) {
-  const path = resolve(pathValue);
-  const manifest = JSON.parse(await readFile(path, "utf8"));
+  const manifest = await loadIdentityManifest(pathValue);
+  const path = manifest.path;
   if (
-    manifest.schemaVersion !== 1 ||
+    ![1, 2].includes(manifest.schemaVersion) ||
     !["mpp", "x402"].includes(manifest.protocol) ||
     !Array.isArray(manifest.segmentFiles) ||
     !manifest.segmentFiles.length
   ) {
     throw new Error(`${path} is not a compatible identity manifest.`);
   }
-  return { ...manifest, path };
+  return manifest;
 }
 
 function identityState() {

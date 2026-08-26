@@ -2,6 +2,7 @@
 
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { basename, dirname, resolve } from "node:path";
+import { loadIdentityManifest } from "./lib/identity-manifest.mjs";
 
 import {
   aggregateMppIdentityActivity,
@@ -29,6 +30,10 @@ import {
   collectX402BlockscoutTransactions,
   createBudgetSafeBlockscoutClient,
 } from "./lib/x402-base-blockscout.mjs";
+import {
+  collectX402BaseSqdRange,
+  DEFAULT_BASE_SQD_PORTAL,
+} from "./lib/x402-base-sqd.mjs";
 
 const DEFAULT_TEMPO_RPC = "https://rpc.tempo.xyz";
 const CDP_HOST = "api.cdp.coinbase.com";
@@ -42,7 +47,10 @@ function argumentsFrom(values) {
   for (let index = 0; index < values.length; index += 1) {
     const value = values[index];
     if (value === "--no-ingest") options.noIngest = true;
+    else if (value === "--single-range") options.singleRange = true;
+    else if (value === "--quiet") options.quiet = true;
     else if (value === "--prefer-tempo-derived") options.preferTempoDerived = true;
+    else if (value === "--prefer-tempo-derived-logs") options.preferTempoDerivedLogs = true;
     else if (value.startsWith("--")) {
       const next = values[index + 1];
       if (!next || next.startsWith("--")) throw new Error(`${value} requires a value.`);
@@ -208,15 +216,11 @@ async function collectX402(from, to, options) {
   };
 }
 
-function resolvedBaseRpcUrl(options) {
-  const explicit = options.preferTempoDerived
-    ? null
-    : options["rpc-url"] ?? process.env.BASE_RPC_URL;
-  if (explicit) return explicit;
+function tempoDerivedBaseRpcUrl() {
   const tempoUrl = process.env.TEMPO_RPC_URL;
   if (!tempoUrl) {
     throw new Error(
-      "BASE_RPC_URL is required for x402 RPC collection (or TEMPO_RPC_URL must use a dRPC Tempo endpoint).",
+      "TEMPO_RPC_URL is required to derive the dRPC Base endpoint.",
     );
   }
   const derived = new URL(tempoUrl);
@@ -225,6 +229,13 @@ function resolvedBaseRpcUrl(options) {
   }
   derived.pathname = derived.pathname.replace("/tempo-mainnet/", "/base-mainnet/");
   return derived.toString();
+}
+
+function resolvedBaseRpcUrl(options) {
+  const explicit = options.preferTempoDerived
+    ? null
+    : options["rpc-url"] ?? process.env.BASE_RPC_URL;
+  return explicit ?? tempoDerivedBaseRpcUrl();
 }
 
 async function collectX402Rpc(from, to, options) {
@@ -336,9 +347,14 @@ async function collectX402Rpc(from, to, options) {
 async function collectX402Events(from, to, options) {
   const registry = await loadRegistry(options.registry);
   const rpcUrl = resolvedBaseRpcUrl(options);
+  const logRpcUrl = options.preferTempoDerivedLogs
+    ? tempoDerivedBaseRpcUrl()
+    : options["log-rpc-url"] ?? rpcUrl;
   const preferredChunk = Number.parseInt(options["event-chunk-size"] ?? "10000", 10);
   const blockBatchSize = Number.parseInt(options["block-batch-size"] ?? "3", 10);
+  const receiptMode = options["receipt-mode"] ?? "block";
   const delayMs = Number.parseInt(options["rpc-delay-ms"] ?? "75", 10);
+  const logDelayMs = Number.parseInt(options["log-rpc-delay-ms"] ?? "25", 10);
   const concurrency = Number.parseInt(options["rpc-concurrency"] ?? "3", 10);
   const maxAttempts = Number.parseInt(options["rpc-max-attempts"] ?? "8", 10);
   if (!Number.isSafeInteger(preferredChunk) || preferredChunk < 1 || preferredChunk > 100_000) {
@@ -350,8 +366,16 @@ async function collectX402Events(from, to, options) {
   if (!Number.isSafeInteger(blockBatchSize) || blockBatchSize < 1 || blockBatchSize > 25) {
     throw new Error("--block-batch-size must be an integer between 1 and 25.");
   }
+  if (!["block", "block-transactions", "transaction", "transaction-filter"].includes(receiptMode)) {
+    throw new Error(
+      "--receipt-mode must be block, block-transactions, transaction, or transaction-filter.",
+    );
+  }
   if (!Number.isSafeInteger(delayMs) || delayMs < 0 || delayMs > 10_000) {
     throw new Error("--rpc-delay-ms must be an integer between 0 and 10000.");
+  }
+  if (!Number.isSafeInteger(logDelayMs) || logDelayMs < 0 || logDelayMs > 10_000) {
+    throw new Error("--log-rpc-delay-ms must be an integer between 0 and 10000.");
   }
   if (!Number.isSafeInteger(maxAttempts) || maxAttempts < 1 || maxAttempts > 12) {
     throw new Error("--rpc-max-attempts must be an integer between 1 and 12.");
@@ -359,17 +383,25 @@ async function collectX402Events(from, to, options) {
   const blockRpcs = Array.from({ length: concurrency }, () =>
     createBudgetSafeRpcClient({ url: rpcUrl, minDelayMs: delayMs, maxAttempts }),
   );
-  const rpc = blockRpcs[0];
+  const rpc = createBudgetSafeRpcClient({
+    url: logRpcUrl,
+    minDelayMs: logDelayMs,
+    maxAttempts,
+  });
   const blocks = await blockRangeForDates(rpc, from, to);
   const result = await collectX402BaseEventRange({
     rpc,
     blockRpcs,
+    from,
+    to,
     fromBlock: blocks.fromBlock,
     toBlockExclusive: blocks.toBlockExclusive,
     facilitatorRegistry: registry.addresses,
     preferredChunk,
     blockBatchSize,
+    receiptMode,
     tokenAddress: registry.tokenAddress,
+    includeDistribution: true,
   });
   return {
     sourceKey: "identity:x402:base-usdc:rpc-events:terminal-recipient-v1",
@@ -378,11 +410,15 @@ async function collectX402Events(from, to, options) {
     evidenceType: "confirmed_chain",
     queryHash: sha256Hex(JSON.stringify({
       provider: new URL(rpcUrl).host,
+      logProvider: new URL(logRpcUrl).host,
       from,
       to,
       blockRange: [blocks.fromBlock, blocks.toBlockExclusive],
       rpcConcurrency: concurrency,
+      rpcDelayMs: delayMs,
+      logRpcDelayMs: logDelayMs,
       blockBatchSize,
+      receiptMode,
       rpcMaxAttempts: maxAttempts,
       detector: "authorization-proxy-batch-events-v1",
       transferClassification: "ordered-receive-forward-terminal-v1",
@@ -466,6 +502,70 @@ async function collectX402Blockscout(from, to, options) {
     })),
     collection: {
       facilitatorRanges: jobs.length,
+      ...result,
+      activities: undefined,
+    },
+    activities: mergeActivities(result.activities),
+  };
+}
+
+async function collectX402Sqd(from, to, options) {
+  const registry = await loadRegistry(options.registry);
+  // Do not ask SQD to scan historical transactions from facilitator addresses
+  // before those addresses were known to participate in x402. The collector
+  // already rejects those transactions after download; filtering the query up
+  // front preserves the result while avoiding a very large amount of unrelated
+  // Base activity for facilitators that joined later.
+  const activeFacilitators = registry.addresses.filter(
+    (entry) => new Date(`${entry.firstSeen}T00:00:00.000Z`) < to,
+  );
+  if (activeFacilitators.length === 0) {
+    throw new Error(`No x402 facilitators were active before ${to.toISOString()}.`);
+  }
+  const rpcUrl = options["rpc-url"] ?? process.env.BASE_RPC_URL;
+  if (!rpcUrl) throw new Error("BASE_RPC_URL is required to resolve the SQD time range.");
+  const rpc = createBudgetSafeRpcClient({
+    url: rpcUrl,
+    minDelayMs: Number.parseInt(options["rpc-delay-ms"] ?? "25", 10),
+    maxAttempts: Number.parseInt(options["rpc-max-attempts"] ?? "8", 10),
+  });
+  const blocks = await blockRangeForDates(rpc, from, to);
+  const portal = options["sqd-portal"] ?? DEFAULT_BASE_SQD_PORTAL;
+  const result = await collectX402BaseSqdRange({
+    portal,
+    fromBlock: blocks.fromBlock,
+    toBlockExclusive: blocks.toBlockExclusive,
+    facilitatorRegistry: activeFacilitators,
+    tokenAddress: registry.tokenAddress,
+    from,
+    to,
+    onProgress: options.quiet
+      ? undefined
+      : ({ batches, matchedBlocks, transactions, lastBlock }) => {
+      if (batches % 10 === 0) {
+        process.stderr.write(
+          `SQD x402 stream: ${batches} batches, ${matchedBlocks} matched blocks, ` +
+            `${transactions.toLocaleString()} facilitator transactions through block ${lastBlock}\n`,
+        );
+      }
+    },
+  });
+  return {
+    sourceKey: "identity:x402:base-usdc:sqd-portal:terminal-recipient-v1",
+    protocol: "x402",
+    network: "base",
+    evidenceType: "confirmed_chain",
+    queryHash: sha256Hex(JSON.stringify({
+      provider: new URL(portal).host,
+      rangeProvider: new URL(rpcUrl).host,
+      from,
+      to,
+      blockRange: [blocks.fromBlock, blocks.toBlockExclusive],
+      facilitatorAddresses: activeFacilitators.map((entry) => entry.address.toLowerCase()),
+      transferClassification: "ordered-receive-forward-terminal-v1",
+      transactionLogSource: "sqd-portal",
+    })),
+    collection: {
       ...result,
       activities: undefined,
     },
@@ -646,10 +746,10 @@ async function writeSegments(segments, outputDir, label) {
 async function main() {
   const options = argumentsFrom(process.argv.slice(2));
   if (options.manifest) {
-    const manifest = JSON.parse(await readFile(resolve(options.manifest), "utf8"));
+    const manifest = await loadIdentityManifest(options.manifest);
     const results = [];
     for (const file of manifest.segmentFiles) {
-      const segment = JSON.parse(await readFile(resolve(dirname(resolve(options.manifest)), file), "utf8"));
+      const segment = JSON.parse(await readFile(resolve(dirname(manifest.path), file), "utf8"));
       results.push(await ingestSegment(segment, options));
     }
     process.stdout.write(`${JSON.stringify({ manifest: resolve(options.manifest), ingestion: results }, null, 2)}\n`);
@@ -662,7 +762,10 @@ async function main() {
   const outputDir = resolve(options["output-dir"] ?? "data/identity-backfills");
   const allFiles = [];
   const summaries = [];
-  for (const range of calendarMonthRanges(from, to)) {
+  const collectionRanges = options.singleRange
+    ? [{ from, to, month: "all" }]
+    : calendarMonthRanges(from, to);
+  for (const range of collectionRanges) {
     const result = options.protocol === "x402"
       ? options.source === "events"
         ? await collectX402Events(range.from, range.to, options)
@@ -670,6 +773,8 @@ async function main() {
         ? await collectX402Rpc(range.from, range.to, options)
         : options.source === "blockscout"
           ? await collectX402Blockscout(range.from, range.to, options)
+          : options.source === "sqd"
+            ? await collectX402Sqd(range.from, range.to, options)
           : await collectX402(range.from, range.to, options)
       : await collectMpp(range.from, range.to, options);
     const segments = makeSegments(result, range.from, range.to);

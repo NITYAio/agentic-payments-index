@@ -1,8 +1,9 @@
+import { collapseX402TransferChains } from "./direct-source.mjs";
 import {
   BASE_USDC_ADDRESS,
   decodeX402AuthorizationInput,
   transfersFromUsdcReceipt,
-  x402IdentityActivitiesFromTransfers,
+  x402IdentityActivitiesFromPayments,
 } from "./x402-base-rpc.mjs";
 
 const DEFAULT_BASE_URL = "https://base.blockscout.com/api";
@@ -249,12 +250,15 @@ export async function collectX402BlockscoutTransactions({
       receiptFallbackCount += 1;
     } else ignoredTransactionCount += 1;
   }
+  const payments = collapseX402TransferChains(transfers);
   return {
     transactionCount: transactions.length,
     directTransactionCount,
     receiptFallbackCount,
     ignoredTransactionCount,
     transferCount: transfers.length,
-    activities: x402IdentityActivitiesFromTransfers(transfers),
+    paymentCount: payments.length,
+    payments,
+    activities: x402IdentityActivitiesFromPayments(payments),
   };
 }

@@ -38,6 +38,24 @@ function validateProtocolWindow(payload, protocol, days) {
   return metric;
 }
 
+function validateAllTime(payload, protocol) {
+  if (!payload.available) throw new Error(`${protocol} all-time data is unavailable.`);
+  const metric = payload.windowMetrics.find((row) => row.protocol === protocol);
+  if (!metric) throw new Error(`${protocol} all-time history is missing.`);
+  const historyDays =
+    (new Date(metric.rangeEnd).getTime() - new Date(metric.rangeStart).getTime()) / DAY_MS;
+  if (!Number.isInteger(historyDays) || historyDays <= 30 || payload.metrics.length !== historyDays) {
+    throw new Error(`${protocol} all-time history is incomplete or has missing daily rows.`);
+  }
+  return {
+    protocol,
+    rangeStart: metric.rangeStart,
+    rangeEnd: metric.rangeEnd,
+    transactions: metric.transactionCount,
+    days: historyDays,
+  };
+}
+
 async function main() {
   if (!Number.isFinite(maxAgeHours) || maxAgeHours <= 0) {
     throw new Error("FRESHNESS_MAX_AGE_HOURS must be a positive number.");
@@ -63,14 +81,13 @@ async function main() {
     }
   }
 
-  const mppHistory = await json("/api/direct-source?protocol=mpp&days=0");
-  const allTime = mppHistory.windowMetrics.find((row) => row.protocol === "mpp");
-  if (!allTime) throw new Error("MPP all-time history is missing.");
-  const historyDays =
-    (new Date(allTime.rangeEnd).getTime() - new Date(allTime.rangeStart).getTime()) / DAY_MS;
-  if (historyDays <= 30 || mppHistory.metrics.length !== historyDays) {
-    throw new Error("MPP all-time history is incomplete or has missing daily rows.");
-  }
+  const histories = await Promise.all(
+    ["mpp", "x402"].map(async (protocol) => ({
+      protocol,
+      payload: await json(`/api/direct-source?protocol=${protocol}&days=0`),
+    })),
+  );
+  const allTime = histories.map(({ protocol, payload }) => validateAllTime(payload, protocol));
 
   process.stdout.write(
     `${JSON.stringify({
@@ -89,12 +106,7 @@ async function main() {
             transactions: metric.transactionCount,
           })),
       })),
-      mppAllTime: {
-        rangeStart: allTime.rangeStart,
-        rangeEnd: allTime.rangeEnd,
-        transactions: allTime.transactionCount,
-      },
-      x402AllTime: "evidence-gated until terminal-recipient identity history is complete",
+      allTime,
     }, null, 2)}\n`,
   );
 }

@@ -1536,12 +1536,19 @@ export default function Home() {
     selectedProtocolData.periods["0"].rangeStart &&
       selectedProtocolData.periods["0"].rangeEnd,
   );
+  const x402HistoryAvailable = Boolean(
+    data.protocols.x402.periods["0"].rangeStart &&
+      data.protocols.x402.periods["0"].rangeEnd,
+  );
+  const historyCoverageNotice = x402HistoryAvailable
+    ? "Direct-chain 24h, 7d, 30d, and History views are live."
+    : "Direct-chain 24h, 7d, and 30d windows are live. MPP history is available; x402 identity history is still being backfilled.";
   const allTimeUnavailableTitle =
     protocol === "mpp"
       ? "MPP history is still loading"
       : protocol === "x402"
-        ? "x402 History is still being backfilled"
-        : "Combined History will unlock after x402 history is complete";
+        ? "x402 history is still being backfilled"
+        : "Combined history will unlock after x402 history is complete";
   const fallbackAnswer = useMemo(
     () => answerQuestion(data, submittedQuestion, protocol),
     [data, submittedQuestion, protocol],
@@ -1806,10 +1813,7 @@ export default function Home() {
       <main className="machineShell">
         <aside className="publicBetaBar" aria-label="Public beta notice">
           <strong>Public beta</strong>
-          <span>
-            Direct-chain 24h, 7d, and 30d windows are live. MPP history is
-            available; x402 identity history is still being backfilled.
-          </span>
+          <span>{historyCoverageNotice}</span>
           <a href="#machine-evidence">Coverage details ↓</a>
         </aside>
         <nav className="machineTopbar">
@@ -1929,10 +1933,7 @@ export default function Home() {
     <main>
       <aside className="publicBetaBar" aria-label="Public beta notice">
         <strong>Public beta</strong>
-        <span>
-          Direct-chain 24h, 7d, and 30d windows are live. MPP history is
-          available; x402 identity history is still being backfilled.
-        </span>
+        <span>{historyCoverageNotice}</span>
         <a href="/coverage">Coverage details ↗</a>
       </aside>
       <nav className="topbar" aria-label="Primary navigation">
