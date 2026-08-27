@@ -25,7 +25,6 @@ jobs:
       FRESHNESS_MAX_AGE_HOURS: "30"
       REFRESH_PROTOCOLS: mpp
       REFRESH_WINDOWS: 1,7,30
-      KNOWN_BLOCKED_PROTOCOLS: x402
 
     steps:
       - name: Check out source
@@ -43,22 +42,19 @@ jobs:
       - name: Refresh exact rolling windows
         run: npm run direct:refresh
 
-      - name: Verify production freshness and all-time coverage
-        run: npm run data:freshness
-
       - name: Summarize the refresh method
         run: |
           echo "MPP refreshes from Tempo payment events."
 
-  verify-x402-collector:
-    name: Verify x402 direct-source collector
+  refresh-x402:
+    name: Refresh x402 rolling windows
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 55
     env:
       BASE_RPC_URL: ${{ secrets.BASE_RPC_URL }}
-      X402_RPC_CONCURRENCY: "1"
-      X402_RPC_DELAY_MS: "250"
-      X402_BLOCK_BATCH_SIZE: "3"
+      DIRECT_SOURCE_INGEST_URL: ${{ secrets.DIRECT_SOURCE_INGEST_URL }}
+      DIRECT_SOURCE_INGEST_TOKEN: ${{ secrets.DIRECT_SOURCE_INGEST_TOKEN }}
+      X402_SQD_SLICE_CONCURRENCY: "4"
 
     steps:
       - name: Check out source
@@ -73,25 +69,35 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
-      - name: Set an exact ten-minute verification window
-        run: |
-          node -e 'const fs = require("node:fs"); const to = new Date(); const from = new Date(to.getTime() - 10 * 60 * 1000); fs.appendFileSync(process.env.GITHUB_ENV, `X402_SMOKE_FROM=${from.toISOString()}\nX402_SMOKE_TO=${to.toISOString()}\n`);'
-
-      - name: Run terminal-recipient verification without publishing
-        run: |
-          npm run direct:collect -- \
-            --protocol x402 \
-            --source events \
-            --from "${X402_SMOKE_FROM}" \
-            --to "${X402_SMOKE_TO}" \
-            --no-ingest \
-            --output /tmp/x402-direct-source-smoke.json
-
-      - name: Validate collected evidence
-        run: |
-          node -e 'const fs = require("node:fs"); const parsed = JSON.parse(fs.readFileSync("/tmp/x402-direct-source-smoke.json", "utf8")); const metrics = parsed.windowSummary?.stats ?? parsed.windowSummary ?? parsed.metrics; if (!metrics || !Number.isFinite(metrics.totalTransactions)) throw new Error("x402 verification returned no valid window metrics"); console.log(`Verified ${metrics.totalTransactions.toLocaleString()} terminal x402 payments in the ten-minute sample.`);'
+      - name: Refresh exact rolling windows
+        run: npm run direct:refresh:x402
 
       - name: Summarize the refresh method
         run: |
-          echo "x402 verification reads Base payment events and collapses pass-through legs to terminal payments."
-          echo "This job verifies the collector but does not publish a partial rolling window."
+          echo "x402 refreshes from Base authorization and transfer events through SQD Portal."
+          echo "Pass-through legs collapse to one payment attributed to its terminal recipient."
+
+  verify-production:
+    name: Verify combined production freshness
+    needs: [refresh-mpp, refresh-x402]
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      PRODUCTION_ORIGIN: https://agenticpaymentsindex.org
+      FRESHNESS_MAX_AGE_HOURS: "30"
+
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Use Node.js 24
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Verify production freshness and all-time coverage
+        run: npm run data:freshness

@@ -1,9 +1,9 @@
 # Direct-source indexing runbook
 
 Status: independent collection and terminal-recipient normalization implemented;
-rolling production cutover complete. MPP available history is active from
-2026-02-16. x402 available history remains evidence-gated pending a
-production-capable Base source and terminal-recipient identity backfill.
+rolling production cutover complete. MPP history is active from 2026-02-16 and
+x402 history is active from 2025-05-09. Both histories and their identity/cohort
+datasets are complete through the latest published UTC boundary.
 
 ## Launch scope
 
@@ -11,7 +11,7 @@ The first independently indexed release is intentionally narrow:
 
 | Protocol | Network and asset | Primary evidence | Published unit | Explicit exclusions |
 |---|---|---|---|---|
-| x402 | Base USDC | Coinbase CDP SQL over Base events, filtered to the open facilitator-address registry | Facilitator-associated payments, counted once at the payer's original amount and attributed to the terminal recipient | Solana, Polygon, non-USDC assets, and quality adjustment for testing or self-payments |
+| x402 | Base USDC | SQD Portal's public Base event archive, filtered to the open facilitator-address registry; Base RPC resolves UTC timestamps to block boundaries | Facilitator-associated payments, counted once at the payer's original amount and attributed to the terminal recipient | Solana, Polygon, non-USDC assets, unresolved ownership, and quality adjustment for testing or speculative activity |
 | MPP | Tempo pathUSD and USDC.e | Public Tempo JSON-RPC `TransferWithMemo` logs carrying the official MPP attribution tag | Distinct MPP-attributed protocol payments | Off-chain session vouchers, custom merchant memos, other assets, and older untagged clients |
 
 x402 terminal-recipient classification and its audit measures are specified in
@@ -21,13 +21,11 @@ The collectors never accept MPPScan or x402scan totals as primary activity evide
 
 ## Cost controls
 
-- Coinbase CDP SQL requires an attached payment method even when use remains
-  within its current free allowance. Dense x402 windows are
-  divided into UTC-day slices and may be divided again when a response reaches
-  provider row or execution limits, so query use depends on activity rather
-  than a fixed one-query-per-window estimate. Record actual usage after each
-  backfill. Incremental refreshes should query only new or revised slices
-  instead of rescanning history.
+- The daily x402 refresh reads Base events from SQD Portal in bounded UTC-day
+  slices. Base RPC is used only to resolve date boundaries to block numbers.
+  Coinbase CDP SQL is optional reconciliation evidence, not a production
+  dependency. The scheduled job scans only the current 30-day publication
+  range; the immutable all-time history is not needlessly rescanned.
 - Tempo's public RPC is suitable for range verification but rate-limited during historical log scans. Tempo's official developer guide lists dRPC, Alchemy, Allium, and Goldsky as data partners. Use a dedicated dRPC archive endpoint for the backfill: try its free 210M-CU allowance first, and cap any paid month at $10 unless measured usage justifies a change.
 - D1 stores daily aggregates and compact provenance—not millions of raw transfers. The launch footprint is negligible relative to the free 5 GB allowance.
 - R2 is not required for launch. Add it later only for compressed raw-evidence archives.
@@ -35,10 +33,10 @@ The collectors never accept MPPScan or x402scan totals as primary activity evide
 
 Expected public-beta infrastructure cost: **$0–$15 per month**: $0–$5 for the application and $0–$10 for a reliable Tempo endpoint. A paid Workers plan is optional at launch and starts at $5 per month. There is no required one-time infrastructure charge.
 
-The scheduled refresh is deliberately MPP-only while x402's production Base
-source is unresolved. The freshness job reports x402 as a visible known-blocked
-warning instead of silently treating stale values as current. Remove that gate
-only after a bounded, production-capable Base source is configured and tested.
+The scheduled refresh runs MPP and x402 in parallel. A final production check
+requires both protocols to be current and the all-time histories to remain
+complete. A failed or delayed protocol stays visibly stale; the workflow never
+silently republishes an old value as current.
 
 ## Secret setup
 
@@ -50,11 +48,15 @@ Create `.env.local` from `.env.example` and keep real values there. The file is 
 cp .env.example .env.local
 ```
 
-1. Create a free Coinbase Developer Platform project and Client API key for the SQL API.
-2. Create a free dRPC Tempo archive endpoint. Upgrade only if a measured backfill exhausts the free allowance, and set a $10 budget cap first.
-3. Store `CDP_CLIENT_API_KEY` and `TEMPO_RPC_URL` only in the collector environment.
-4. Generate a high-entropy `DIRECT_SOURCE_INGEST_TOKEN` and configure the same value as a production secret and in the trusted collector environment.
-5. Set `DIRECT_SOURCE_INGEST_URL` to `https://agenticpaymentsindex.org/api/internal/direct-source-ingest` after the migration is deployed.
+1. Create a Base Mainnet RPC endpoint and store it as `BASE_RPC_URL`. It is used
+   for timestamp-to-block resolution, not for full-chain event scanning.
+2. Create a Tempo archive endpoint and store it as `TEMPO_RPC_URL`.
+3. Generate a high-entropy `DIRECT_SOURCE_INGEST_TOKEN` and configure the same
+   value as a production secret and in the trusted collector environment.
+4. Set `DIRECT_SOURCE_INGEST_URL` to
+   `https://agenticpaymentsindex.org/api/internal/direct-source-ingest`.
+5. Keep `CDP_CLIENT_API_KEY` only if Coinbase SQL is used for optional
+   reconciliation. It is not required by the daily production refresh.
 
 ## Commands
 
@@ -100,12 +102,13 @@ Refresh the exact rolling windows and then audit production freshness:
 
 ```bash
 REFRESH_PROTOCOLS=mpp npm run direct:refresh
-KNOWN_BLOCKED_PROTOCOLS=x402 npm run data:freshness
+npm run direct:refresh:x402
+npm run data:freshness
 ```
 
-`REFRESH_PROTOCOLS` is explicit so a protocol cannot begin consuming a paid
-provider by accident. The GitHub Actions schedule uses `mpp` until the x402
-source gate is intentionally removed.
+`REFRESH_PROTOCOLS` is explicit so the MPP collector cannot begin consuming an
+unexpected provider by accident. The x402 command names its SQD source in the
+script and publishes only after all 30 daily slices reconcile.
 
 ## Reconciliation gates
 
@@ -123,7 +126,7 @@ Do not switch the homepage to the new aggregates until all gates pass:
 ### Day 1 — Evidence and backfill
 
 - Deploy migration `0004` to the preview database.
-- Configure the Coinbase and dRPC credentials locally without sharing them.
+- Configure the Base and Tempo RPC credentials locally without sharing them.
 - Run the 30-day x402 and MPP backfills.
 - Review daily totals, gaps, first/last timestamps, and query provenance.
 

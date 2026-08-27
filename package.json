@@ -23,6 +23,7 @@
     "direct:merge-history": "node scripts/merge-direct-source-history.mjs",
     "direct:collect": "node --env-file-if-exists=.env.local scripts/collect-direct-source.mjs",
     "direct:refresh": "node --env-file-if-exists=.env.local scripts/refresh-direct-source-windows.mjs",
+    "direct:refresh:x402": "node --env-file-if-exists=.env.local scripts/refresh-x402-sqd-windows.mjs",
     "data:freshness": "node scripts/check-production-freshness.mjs",
     "direct:registry": "node scripts/sync-x402-facilitators.mjs"
   },

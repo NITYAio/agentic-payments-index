@@ -219,7 +219,10 @@ async function identitySets(manifestPath, manifest, days) {
         throw new Error(`Invalid activity timestamp in ${file}.`);
       }
       const day = timestamp.toISOString().slice(0, 10);
-      if (!byDay.has(day)) throw new Error(`Activity ${day} falls outside manifest coverage.`);
+      // A rolling-window evidence build reads the same immutable all-time identity
+      // manifest, but only retains identities whose activity falls inside the
+      // requested window.
+      if (!byDay.has(day)) continue;
       const role = activity.role === "payer" ? "payers" : "payees";
       byDay.get(day)[role].add(activity.identityHash);
       all[role].add(activity.identityHash);
@@ -237,10 +240,34 @@ async function main() {
   const options = argumentsFrom(process.argv.slice(2));
   if (!options.manifest) throw new Error("--manifest is required.");
   if (!options.output) throw new Error("--output is required.");
+  const sourceProvider = options["source-provider"] ?? "rpc";
+  if (!["rpc", "sqd"].includes(sourceProvider)) {
+    throw new Error("--source-provider must be rpc or sqd.");
+  }
   const manifestPath = resolve(options.manifest);
   const manifest = await loadIdentityManifest(manifestPath);
-  const { from, to } = validateCheckpoint(manifest);
-  const summaries = validateSliceCoverage(manifest, from, to);
+  const { from: manifestFrom, to: manifestTo } = validateCheckpoint(manifest);
+  const summaries = validateSliceCoverage(manifest, manifestFrom, manifestTo);
+  const from = new Date(options.from ?? manifestFrom.toISOString());
+  const to = new Date(options.to ?? manifestTo.toISOString());
+  if (
+    !Number.isFinite(from.getTime()) ||
+    !Number.isFinite(to.getTime()) ||
+    from >= to ||
+    from < manifestFrom ||
+    to > manifestTo
+  ) {
+    throw new Error("--from and --to must define a valid range inside manifest coverage.");
+  }
+  if (from.getUTCHours() !== 0 || from.getUTCMinutes() !== 0 || from.getUTCSeconds() !== 0 ||
+      to.getUTCHours() !== 0 || to.getUTCMinutes() !== 0 || to.getUTCSeconds() !== 0) {
+    throw new Error("Rolling evidence ranges must use UTC day boundaries.");
+  }
+  const selectedSummaries = summaries.filter((summary) => {
+    const start = new Date(summary.sliceStart);
+    const end = new Date(summary.sliceEnd);
+    return start >= from && end <= to;
+  });
   const days = utcDays(from, to);
   const sourceLimitation =
     summaries.find((summary) => summary.collection?.windowSummary?.limitation)?.collection
@@ -250,14 +277,14 @@ async function main() {
   const limitation = sourceLimitation;
   const byDay = new Map(days.map((day) => [day, emptyMetric(day, limitation)]));
   let inputRowCount = 0;
-  for (const summary of summaries) {
+  for (const summary of selectedSummaries) {
     inputRowCount += integer(
       summary.collection?.signalLogCount ?? summary.collection?.paymentCount,
       "inputRowCount",
     );
     for (const metric of summary.collection?.metrics ?? []) {
       const target = byDay.get(metric.activityDate);
-      if (!target) throw new Error(`Metric ${metric.activityDate} falls outside coverage.`);
+      if (!target) continue;
       addMetric(target, metric);
       mergeHistogram(
         target.trustAmountHistogram,
@@ -306,14 +333,18 @@ async function main() {
   }
   const queryHash = sha256(JSON.stringify({
     source: "x402-base-eip3009-events",
+    sourceProvider,
     terminalRecipientClassifier: "receive-forward-terminal-v1",
     rangeStart: from.toISOString(),
     rangeEnd: to.toISOString(),
-    slices: summaries.map((summary) => [summary.sliceStart, summary.sliceEnd]),
+    slices: selectedSummaries.map((summary) => [summary.sliceStart, summary.sliceEnd]),
     identitySegments: manifest.segmentFiles,
   }));
   const evidence = {
-    sourceKey: "direct:x402:base-usdc:rpc-events:terminal-recipient-v1",
+    sourceKey:
+      sourceProvider === "sqd"
+        ? "direct:x402:base-usdc:sqd-events:terminal-recipient-v1"
+        : "direct:x402:base-usdc:rpc-events:terminal-recipient-v1",
     protocol: "x402",
     network: "base",
     queryHash,
@@ -347,8 +378,11 @@ async function main() {
     },
     coverage: {
       measurementUnit: "onchain_settlement",
-      sourceType: "chain_rpc",
-      sourceUrl: "https://docs.base.org/base-chain/quickstart/connecting-to-base",
+      sourceType: sourceProvider === "sqd" ? "indexed_chain_archive" : "chain_rpc",
+      sourceUrl:
+        sourceProvider === "sqd"
+          ? "https://portal.sqd.dev/"
+          : "https://docs.base.org/base-chain/quickstart/connecting-to-base",
       coverageStart: from.toISOString(),
       coverageEnd: to.toISOString(),
       status: Date.now() - to.getTime() < 36 * 3_600_000 ? "active" : "backfilling",
@@ -363,7 +397,7 @@ async function main() {
     rangeStart: from.toISOString(),
     rangeEnd: to.toISOString(),
     days: metrics.length,
-    slices: summaries.length,
+    slices: selectedSummaries.length,
     segmentFiles: manifest.segmentFiles.length,
     identityActivities: identities.activities,
     transactions: evidence.windowSummary.transactionCount,

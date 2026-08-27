@@ -723,13 +723,34 @@ async function ingestSegment(segment, options) {
   if (!ingestUrl) return { status: "not_configured" };
   const token = process.env.IDENTITY_INGEST_TOKEN;
   if (!token) throw new Error("IDENTITY_INGEST_TOKEN is required when an ingest URL is used.");
-  const response = await fetch(ingestUrl, {
-    method: "POST",
-    headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
-    body: JSON.stringify(segment),
-  });
-  if (!response.ok) throw new Error(`Identity ingestion failed (${response.status}): ${await response.text()}`);
-  return await response.json();
+  for (let attempt = 0; attempt < 6; attempt += 1) {
+    let response;
+    try {
+      response = await fetch(ingestUrl, {
+        method: "POST",
+        headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
+        body: JSON.stringify(segment),
+        signal: AbortSignal.timeout(60_000),
+      });
+    } catch (cause) {
+      if (attempt === 5) {
+        throw new Error(`Identity ingestion network request failed for ${segment.segmentKey} after retries.`, {
+          cause,
+        });
+      }
+      await new Promise((resolveWait) => setTimeout(resolveWait, 750 * 2 ** attempt));
+      continue;
+    }
+    if (response.ok) return await response.json();
+    const retryable = response.status === 429 || response.status >= 500;
+    if (!retryable || attempt === 5) {
+      throw new Error(
+        `Identity ingestion failed for ${segment.segmentKey} (${response.status}): ${await response.text()}`,
+      );
+    }
+    await new Promise((resolveWait) => setTimeout(resolveWait, 750 * 2 ** attempt));
+  }
+  throw new Error(`Identity ingestion failed for ${segment.segmentKey}.`);
 }
 
 async function writeSegments(segments, outputDir, label) {
@@ -748,9 +769,12 @@ async function main() {
   if (options.manifest) {
     const manifest = await loadIdentityManifest(options.manifest);
     const results = [];
-    for (const file of manifest.segmentFiles) {
+    for (const [index, file] of manifest.segmentFiles.entries()) {
       const segment = JSON.parse(await readFile(resolve(dirname(manifest.path), file), "utf8"));
       results.push(await ingestSegment(segment, options));
+      if (!options.quiet && ((index + 1) % 25 === 0 || index + 1 === manifest.segmentFiles.length)) {
+        process.stderr.write(`Imported ${index + 1}/${manifest.segmentFiles.length} identity segments.\n`);
+      }
     }
     process.stdout.write(`${JSON.stringify({ manifest: resolve(options.manifest), ingestion: results }, null, 2)}\n`);
     return;
