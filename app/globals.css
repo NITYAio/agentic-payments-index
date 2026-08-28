@@ -1689,6 +1689,7 @@ button {
 }
 
 .trustBarometer {
+  scroll-margin-top: 150px;
   padding: clamp(78px, 9vw, 132px) 7vw;
   border-bottom: 1px solid var(--line);
   background:
@@ -2006,6 +2007,29 @@ button {
 .trustRung > strong { margin-top: 30px; color: #a99b93; font-size: 1.35rem; font-weight: 480; }
 .trustRung > b { margin-top: 8px; color: #776b65; font-size: 2.7rem; font-weight: 400; }
 .trustDashedBaseline { display: block; margin: 16px 0; border-top: 1px dashed #443a36; }
+.trustRungSparkline {
+  display: block;
+  width: 100%;
+  height: 32px;
+  margin: 10px 0 4px;
+  overflow: visible;
+}
+.trustRungSparkline polyline {
+  fill: none;
+  stroke: var(--orange);
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  vector-effect: non-scaling-stroke;
+}
+.trustDelta {
+  display: block;
+  min-height: 1.1rem;
+  margin: 5px 0 10px;
+  color: #988981;
+  font-family: var(--font-geist-mono), monospace;
+  font-size: 0.55rem;
+}
 .trustRung > p { margin: 0; color: #746861; font-size: 0.65rem; line-height: 1.55; }
 .trustRung.lit {
   border-style: solid;
@@ -3842,7 +3866,11 @@ footer > span {
   }
 
   .statusShort {
-    display: inline;
+    display: block;
+    min-width: 0;
+    max-width: 112px;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
 
   .protocolStrip {

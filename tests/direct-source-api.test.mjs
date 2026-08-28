@@ -219,6 +219,71 @@ test("direct-source migration, ingestion, idempotency, and 30-day read work end 
     assert.equal(history.windowMetrics[0].rangeStart, "2026-06-10T00:00:00.000Z");
     assert.equal(history.windowMetrics[0].rangeEnd, "2026-08-09T00:00:00.000Z");
     assert.equal(history.metrics.length, 60);
+
+    await database.batch([
+      database.prepare(
+        `UPDATE protocol_window_metrics
+         SET qualifying_payment_count = transaction_count,
+             qualifying_volume_usd_micros = volume_usd_micros,
+             median_payment_usd_micros = CASE protocol WHEN 'mpp' THEN 10000 ELSE 6170 END,
+             max_payment_usd_micros = CASE protocol WHEN 'mpp' THEN 273390000 ELSE 30000000000 END,
+             over_one_count = CASE protocol WHEN 'mpp' THEN 36797 ELSE 72531 END,
+             over_ten_count = CASE protocol WHEN 'mpp' THEN 20 ELSE 20075 END,
+             over_hundred_count = CASE protocol WHEN 'mpp' THEN 6 ELSE 349 END,
+             over_thousand_count = CASE protocol WHEN 'mpp' THEN 0 ELSE 32 END,
+             excluded_zero_count = CASE protocol WHEN 'mpp' THEN 0 ELSE 22 END,
+             excluded_self_count = CASE protocol WHEN 'mpp' THEN 234 ELSE 8735 END`,
+      ),
+      database.prepare(
+        `UPDATE daily_protocol_metrics
+         SET qualifying_payment_count = transaction_count,
+             qualifying_volume_usd_micros = volume_usd_micros,
+             median_payment_usd_micros = CASE protocol WHEN 'mpp' THEN 10000 ELSE 6170 END,
+             max_payment_usd_micros = CASE protocol WHEN 'mpp' THEN 273390000 ELSE 30000000000 END,
+             over_one_count = CASE protocol WHEN 'mpp' THEN 100 ELSE 200 END,
+             over_ten_count = CASE protocol WHEN 'mpp' THEN 2 ELSE 5 END,
+             over_hundred_count = CASE protocol WHEN 'mpp' THEN 0 ELSE 1 END,
+             over_thousand_count = CASE protocol WHEN 'mpp' THEN 0 ELSE 1 END,
+             excluded_zero_count = CASE protocol WHEN 'mpp' THEN 0 ELSE 1 END,
+             excluded_self_count = CASE protocol WHEN 'mpp' THEN 1 ELSE 2 END`,
+      ),
+    ]);
+
+    const trustResponse = await worker.fetch(
+      new Request("http://localhost/api/trust-barometer?protocol=all&days=30&source=local"),
+      bindings,
+      context,
+    );
+    assert.equal(trustResponse.status, 200);
+    const trust = await trustResponse.json();
+    assert.equal(trust.available, true);
+    assert.equal(trust.status, "verified");
+    assert.equal(trust.metrics.qualifyingPaymentCount, 10_012_304);
+    assert.equal(trust.metrics.medianPaymentUsd, null);
+    assert.equal(trust.metrics.maxPaymentUsd, 30_000);
+    assert.equal(trust.metrics.thresholds[0].count, 109_328);
+    assert.equal(trust.metrics.thresholds[3].count, 32);
+    assert.equal(trust.metrics.series.length, 30);
+    assert.match(trust.reason, /combined median is not fabricated/i);
+
+    const x402TrustResponse = await worker.fetch(
+      new Request("http://localhost/api/trust-barometer?protocol=x402&days=30&source=local"),
+      bindings,
+      context,
+    );
+    const x402Trust = await x402TrustResponse.json();
+    assert.equal(x402Trust.available, true);
+    assert.equal(x402Trust.metrics.medianPaymentUsd, 0.00617);
+    assert.equal(x402Trust.metrics.thresholds[2].count, 349);
+
+    const incompleteNinetyDayResponse = await worker.fetch(
+      new Request("http://localhost/api/trust-barometer?protocol=all&days=90&source=local"),
+      bindings,
+      context,
+    );
+    const incompleteNinetyDay = await incompleteNinetyDayResponse.json();
+    assert.equal(incompleteNinetyDay.available, false);
+    assert.match(incompleteNinetyDay.reason, /full 90-day comparison is not yet available/i);
   } finally {
     delete env.DB;
     delete env.DIRECT_SOURCE_INGEST_TOKEN;

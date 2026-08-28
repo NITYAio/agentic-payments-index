@@ -116,24 +116,26 @@ export default function CoveragePage() {
 
       <section className="reconciliationNote" id="trust-barometer-method">
         <span className="sectionNumber">Trust Barometer methodology</span>
-        <h2>MPP ticket size is measured. x402 remains outside the result for now.</h2>
+        <h2>MPP and x402 ticket sizes are measured from direct protocol evidence.</h2>
         <p>
-          The Trust Barometer excludes free calls, token mints, self-transfers,
-          and speculative transfers. It counts reconstructed payments once at
-          their final recipient, then calculates the average, median, largest
-          observation, and threshold counts. Verified MPP evidence is available
-          for rolling 7- and 30-day windows. The combined view clearly labels
-          this MPP-only scope until x402 terminal-payment history can be processed
-          with the same reproducible rules.
+          The Trust Barometer includes protocol-attributed paid observations: MPP
+          charges and settled sessions on Tempo, plus x402-authorized USDC settlements
+          on Base. Zero-value and self-payments are excluded. Generic token mints and
+          speculative USDC transfers do not match the protocol-event selection and are
+          outside the result. Receive-then-forward x402 chains count once at the original
+          payer amount and resolve to the terminal recipient.
         </p>
         <p>
-          The 90-day and all-history views remain evidence-gated while older MPP
-          records are reprocessed. The Index never presents a missing observation,
-          or a third-party benchmark, as its own measured result.
+          Seven- and 30-day views use exact rolling windows. The 90-day view is summed
+          from verified daily history, and All uses each protocol’s widest verified
+          history. Counts, value, averages, maxima, and threshold totals can be combined.
+          Medians cannot be added, so the combined view does not fabricate one; select
+          MPP or x402 to inspect an exact protocol median.
         </p>
         <p>
           “Agent ticket size” is a market shorthand and a trust proxy. A payment
-          rail alone does not prove that an autonomous agent initiated a payment.
+          rail alone does not prove that an autonomous agent initiated a payment, and
+          a large outlier does not by itself establish broad market trust.
         </p>
       </section>
 

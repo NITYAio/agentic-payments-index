@@ -39,7 +39,7 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /Ask the Index/i);
   assert.match(html, /Ask about metrics/i);
   assert.match(html, /Public beta/i);
-  assert.match(html, /MPP history is available.*x402 identity history is still being backfilled/is);
+  assert.match(html, /Loading the latest verified direct-chain snapshot/i);
   assert.match(html, /MPP on Tempo.*x402 on Base/i);
   assert.match(html, /Payment value/i);
   assert.match(html, /Trust Barometer/i);

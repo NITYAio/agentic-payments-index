@@ -84,7 +84,7 @@ type DirectoryData = {
 type TrustBarometerData = {
   available: boolean;
   status: "verified" | "partial" | "unavailable";
-  scope?: "mpp" | null;
+  scope?: ProtocolKey | null;
   coverageStart: string | null;
   coverageEnd: string | null;
   reason: string;
@@ -93,12 +93,17 @@ type TrustBarometerData = {
     qualifyingPaymentCount: number;
     qualifyingVolumeUsd: number;
     averagePaymentUsd: number;
-    medianPaymentUsd: number;
+    medianPaymentUsd: number | null;
     maxPaymentUsd: number;
     excludedZeroCount: number;
     excludedSelfCount: number;
     daysSinceTracking: number;
-    thresholds: Array<{ amount: number; count: number; delta: number | null }>;
+    thresholds: Array<{
+      amount: number;
+      count: number;
+      delta: number | null;
+      series: Array<{ period: string; count: number }>;
+    }>;
     series: Array<{
       date: string;
       qualifyingPaymentCount: number;
@@ -1102,9 +1107,8 @@ function TrustBarometer({
 }) {
   const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
   const metrics = data.metrics ?? null;
-  const series = metrics?.series.filter(
-    (row) => row.averagePaymentUsd !== null && row.medianPaymentUsd !== null,
-  ) ?? [];
+  const series = metrics?.series.filter((row) => row.averagePaymentUsd !== null) ?? [];
+  const hasMedianSeries = series.some((row) => row.medianPaymentUsd !== null);
   const yMax = Math.max(
     0.01,
     ...series.flatMap((row) => [row.averagePaymentUsd ?? 0, row.medianPaymentUsd ?? 0]),
@@ -1112,11 +1116,13 @@ function TrustBarometer({
   const chartPoints = (key: "averagePaymentUsd" | "medianPaymentUsd") =>
     series
       .map((row, index) => {
+        const value = row[key];
+        if (value === null) return null;
         const x = series.length < 2 ? 500 : 54 + (index / (series.length - 1)) * 892;
-        const value = row[key] ?? 0;
         const y = 224 - (value / yMax) * 176;
         return `${x.toFixed(1)},${y.toFixed(1)}`;
       })
+      .filter((point): point is string => Boolean(point))
       .join(" ");
   const largestIndex = series.reduce(
     (best, row, index) => (row.maxPaymentUsd ?? 0) > (series[best]?.maxPaymentUsd ?? 0) ? index : best,
@@ -1142,7 +1148,7 @@ function TrustBarometer({
       <div className="trustPrimary">
         <div className="trustHeader">
           <span className="sectionNumber">Trust Barometer</span>
-          <h2><em>Ticket size measures trust.</em></h2>
+          <h2>Volume measures activity. <em>Ticket size measures trust.</em></h2>
           <div className="trustHeaderAside">
             <div className="periodControl trustPeriod" aria-label="Trust Barometer time period">
               {TRUST_PERIODS.map((item) => (
@@ -1157,8 +1163,9 @@ function TrustBarometer({
               ))}
             </div>
             <p>
-              Free-tier calls excluded. Computed on agent-commerce volume only—mints,
-              self-transfers, and speculative flows removed.{" "}
+              Free-tier and zero-value calls excluded. Computed from protocol-attributed
+              commerce observations only—mints and self-payments removed, with terminal
+              x402 recipients normalized.{" "}
               <a href={data.methodology}>See methodology ↗</a>
             </p>
           </div>
@@ -1175,19 +1182,21 @@ function TrustBarometer({
             />
             <strong>
               {metrics
-                ? `${usd(metrics.averagePaymentUsd, true)} average · ${usd(metrics.medianPaymentUsd, true)} median`
+                ? metrics.medianPaymentUsd === null
+                  ? `${usd(metrics.averagePaymentUsd, true)} average · median shown by protocol`
+                  : `${usd(metrics.averagePaymentUsd, true)} average · ${usd(metrics.medianPaymentUsd, true)} median`
                 : "Awaiting verified classification"}
             </strong>
           </div>
           <span className={data.available ? "trustVerified" : "trustEvidenceGate"}>
-            {data.status === "partial" ? "MPP measured · x402 pending" : data.available ? "Verified" : "Evidence gate"}
+            {data.available ? "Verified" : "Evidence gate"}
           </span>
         </div>
         {metrics ? (
           <div className="trustLiveChart">
             <div className="trustLegend">
               <span><i className="average" /> Average</span>
-              <span><i className="median" /> Median</span>
+              {hasMedianSeries ? <span><i className="median" /> Median</span> : null}
               <span>{compact(metrics.qualifyingPaymentCount)} qualifying payments</span>
             </div>
             <svg
@@ -1226,16 +1235,16 @@ function TrustBarometer({
               <text className="trustAxisLabel" x="47" y="140" textAnchor="end">{usd(yMax / 2, true)}</text>
               <text className="trustAxisLabel" x="47" y="228" textAnchor="end">$0</text>
               <polyline className="trustAverageLine" points={chartPoints("averagePaymentUsd")} />
-              <polyline className="trustMedianLine" points={chartPoints("medianPaymentUsd")} />
+              {hasMedianSeries ? <polyline className="trustMedianLine" points={chartPoints("medianPaymentUsd")} /> : null}
               {activeRow ? (
                 <g className="trustInspection">
                   <line x1={activeX} y1="42" x2={activeX} y2="224" />
                   <circle className="average" cx={activeX} cy={activeAverageY} r="5" />
-                  <circle className="median" cx={activeX} cy={activeMedianY} r="4" />
-                  <rect x={tooltipX} y={tooltipY} width="190" height="66" rx="9" />
+                  {activeRow.medianPaymentUsd !== null ? <circle className="median" cx={activeX} cy={activeMedianY} r="4" /> : null}
+                  <rect x={tooltipX} y={tooltipY} width="190" height={activeRow.medianPaymentUsd === null ? 48 : 66} rx="9" />
                   <text className="date" x={tooltipX + 12} y={tooltipY + 18}>{trustChartDate(activeRow.date)}</text>
                   <text x={tooltipX + 12} y={tooltipY + 38}>Average {usd(activeRow.averagePaymentUsd ?? 0, true)}</text>
-                  <text x={tooltipX + 12} y={tooltipY + 56}>Median {usd(activeRow.medianPaymentUsd ?? 0, true)}</text>
+                  {activeRow.medianPaymentUsd !== null ? <text x={tooltipX + 12} y={tooltipY + 56}>Median {usd(activeRow.medianPaymentUsd, true)}</text> : null}
                 </g>
               ) : null}
               {largest ? (
@@ -1252,7 +1261,9 @@ function TrustBarometer({
             </svg>
             <p className="trustChartInstruction" aria-live="polite">
               {activeRow
-                ? `${trustChartDate(activeRow.date)}: average ${usd(activeRow.averagePaymentUsd ?? 0, true)}; median ${usd(activeRow.medianPaymentUsd ?? 0, true)}.`
+                ? activeRow.medianPaymentUsd === null
+                  ? `${trustChartDate(activeRow.date)}: combined average ${usd(activeRow.averagePaymentUsd ?? 0, true)}. Select MPP or x402 for an exact protocol median.`
+                  : `${trustChartDate(activeRow.date)}: average ${usd(activeRow.averagePaymentUsd ?? 0, true)}; median ${usd(activeRow.medianPaymentUsd, true)}.`
                 : "Click or move across the chart to inspect a date and its ticket size."}
             </p>
             <p className="trustScopeNote">{data.reason}</p>
@@ -1275,27 +1286,41 @@ function TrustBarometer({
       </div>
 
       <div className="trustLadder" aria-label="Payment threshold ladder">
-        {(metrics?.thresholds ?? [1, 10, 100, 1_000].map((amount) => ({ amount, count: 0, delta: null }))).map((threshold, index) => {
+        {(metrics?.thresholds ?? [1, 10, 100, 1_000].map((amount) => ({ amount, count: 0, delta: null, series: [] }))).map((threshold, index) => {
           const measured = Boolean(metrics);
           const hasActivity = measured && threshold.count > 0;
           const visibleCount = hasActivity || threshold.amount <= 10 ? compact(threshold.count) : "—";
-          const zeroCaption = threshold.amount === 10
-            ? "No transaction above $10 recorded since tracking began."
-            : threshold.amount >= 100
-              ? "Awaiting first observation."
-              : "No transaction above $1 recorded in this period.";
+          const thresholdSeries = threshold.series ?? [];
+          const sparkMax = Math.max(1, ...thresholdSeries.map((point) => point.count));
+          const sparkPoints = thresholdSeries
+            .map((point, pointIndex) => {
+              const x = thresholdSeries.length < 2 ? 50 : 4 + (pointIndex / (thresholdSeries.length - 1)) * 92;
+              const y = 28 - (point.count / sparkMax) * 24;
+              return `${x.toFixed(1)},${y.toFixed(1)}`;
+            })
+            .join(" ");
+          const deltaCopy = threshold.delta === null
+            ? "No complete prior period"
+            : threshold.delta === 0
+              ? "No change vs prior period"
+              : `${threshold.delta > 0 ? "↑" : "↓"} ${Math.abs(threshold.delta).toFixed(1)}% vs prior period`;
           return (
           <article className={`trustRung ${hasActivity ? "lit" : "unlit"}`} key={threshold.amount}>
             <div><span>Rung {index + 1}</span><i aria-hidden="true" /></div>
             <strong>${threshold.amount.toLocaleString()}+</strong>
             <b>{measured ? visibleCount : "—"}</b>
-            <span className="trustDashedBaseline" aria-hidden="true" />
+            {hasActivity && thresholdSeries.length > 1 ? (
+              <svg className="trustRungSparkline" viewBox="0 0 100 32" aria-hidden="true">
+                <polyline points={sparkPoints} />
+              </svg>
+            ) : <span className="trustDashedBaseline" aria-hidden="true" />}
+            {measured ? <small className="trustDelta">{deltaCopy}</small> : null}
             <p>
               {!measured
                 ? "Coverage unavailable. Awaiting first defensible observation."
                 : hasActivity
-                  ? `${compact(threshold.count)} qualifying payments in this period. Prior-period delta will appear after the next complete window.`
-                  : `${zeroCaption} 0 — ${metrics.daysSinceTracking} days and counting.`}
+                  ? `${compact(threshold.count)} qualifying payments ${period === 0 ? "since tracking began" : "in this period"}.`
+                  : `No qualifying payment above $${threshold.amount.toLocaleString()} ${period === 0 ? "since tracking began" : "in this period"}. 0 — ${metrics.daysSinceTracking} days and counting.`}
             </p>
           </article>
           );
@@ -1403,7 +1428,8 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
-    fetch(`/api/trust-barometer?days=${trustPeriod}&protocol=${protocol}`)
+    const localSnapshot = window.location.hostname === "127.0.0.1" ? "&source=local" : "";
+    fetch(`/api/trust-barometer?days=${trustPeriod}&protocol=${protocol}${localSnapshot}`)
       .then((response) => {
         if (!response.ok) throw new Error("Trust data request failed");
         return response.json();
@@ -1540,15 +1566,17 @@ export default function Home() {
     data.protocols.x402.periods["0"].rangeStart &&
       data.protocols.x402.periods["0"].rangeEnd,
   );
-  const historyCoverageNotice = x402HistoryAvailable
-    ? "Direct-chain 24h, 7d, 30d, and History views are live."
-    : "Direct-chain 24h, 7d, and 30d windows are live. MPP history is available; x402 identity history is still being backfilled.";
+  const historyCoverageNotice = loading
+    ? "Loading the latest verified direct-chain snapshot."
+    : x402HistoryAvailable
+      ? "Direct-chain rolling windows and verified MPP + x402 history are live."
+      : "Current rolling windows are live; historical coverage is temporarily unavailable.";
   const allTimeUnavailableTitle =
     protocol === "mpp"
-      ? "MPP history is still loading"
+      ? "MPP history is temporarily unavailable"
       : protocol === "x402"
-        ? "x402 history is still being backfilled"
-        : "Combined history will unlock after x402 history is complete";
+        ? "x402 history is temporarily unavailable"
+        : "Combined history is temporarily unavailable";
   const fallbackAnswer = useMemo(
     () => answerQuestion(data, submittedQuestion, protocol),
     [data, submittedQuestion, protocol],
