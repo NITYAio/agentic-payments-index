@@ -45,6 +45,9 @@ type ExplorerData = {
     ProtocolKey,
     {
       source: string;
+      measurementLabel: string;
+      volumeLabel: string;
+      volumeComparable: boolean;
       periods: Record<
         PeriodKey,
         { stats: Stats; buckets: Bucket[] }
@@ -108,6 +111,15 @@ function usd(value: number, precise = false) {
 function percent(value: number) {
   if (!Number.isFinite(value)) return "not enough data";
   return `${value >= 0 ? "+" : ""}${value.toFixed(1)}%`;
+}
+
+function monthName(month: string | null) {
+  if (!month) return null;
+  return new Date(`${month}-01T00:00:00Z`).toLocaleDateString("en-US", {
+    month: "long",
+    year: "numeric",
+    timeZone: "UTC",
+  });
 }
 
 function percentageDelta(value: number, baseline: number) {
@@ -290,17 +302,54 @@ async function answerQuestion(
         source: `Agentic Payments Index identity layer${cohort.sources.length ? ` (${cohort.sources.join(", ")})` : ""}`,
       };
     }
+
+    const requestedMonth = request.cohortMonth;
+    const beforeCoverage = Boolean(
+      requestedMonth && cohort?.coverageStart && requestedMonth < cohort.coverageStart,
+    );
+    const afterCompleteCoverage = Boolean(
+      requestedMonth && cohort?.completeThrough && requestedMonth > cohort.completeThrough,
+    );
+    if (requestedMonth && cohort && (beforeCoverage || afterCompleteCoverage)) {
+      const requestedLabel = monthName(requestedMonth);
+      const coverageStartLabel = monthName(cohort.coverageStart);
+      const completeThroughLabel = monthName(cohort.completeThrough);
+      return {
+        ...common,
+        eyebrow: `${seller ? "Service" : "Buyer"} cohort retention · available coverage`,
+        value: beforeCoverage
+          ? `Available from ${coverageStartLabel}`
+          : `Complete through ${completeThroughLabel}`,
+        change: null,
+        comparison: `${requestedLabel} is outside the verified identity history currently available for ${label}.`,
+        formula: seller
+          ? "Verified service identity × cohort month × returning-active month"
+          : "Hashed protocol identity × cohort month × returning-active month",
+        explanation: beforeCoverage
+          ? `Ask for a cohort from ${coverageStartLabel} through ${completeThroughLabel}. The Index will not estimate retention for earlier months from incomplete identity history.`
+          : `The latest complete cohort month is ${completeThroughLabel}. The current partial month is excluded until the full month has finished.`,
+        metric: seller ? "servers" : "buyers",
+        limited: true,
+        status: "Outside verified coverage",
+        visualization: "none",
+      };
+    }
     return {
       ...common,
       eyebrow: `${seller ? "Service" : "Payer"} cohort retention · collector status`,
-      value: "Awaiting identity backfill",
+      value: cohort?.limitation ? "Not yet reliable" : "Awaiting identity backfill",
       change: null,
-      comparison: "The cohort engine is live, but no complete verified identity segment covers this request yet.",
+      comparison:
+        cohort?.limitation ??
+        "The cohort engine is live, but no complete verified identity segment covers this request yet.",
       formula: seller
         ? "Verified service identity × cohort month × returning-active month"
         : "Hashed protocol identity × cohort month × returning-active month",
       explanation:
-        `The storage, privacy-preserving identity normalization, idempotent ingestion, and cohort calculation layers are ready. A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified MPP receipt or x402 settlement history has been backfilled; rolling aggregate counts remain excluded.`,
+        seller && protocol !== "mpp" && cohort?.limitation
+          ? "The Index will not calculate retention from recipient addresses known to include routing contracts. This result will unlock after terminal-recipient identity history is complete."
+          : cohort?.limitation ??
+            `A defensible ${seller ? "seller/service" : "buyer"} cohort will appear only after verified identity history has been backfilled; rolling aggregate counts remain excluded.`,
       metric: seller ? "servers" : "buyers",
       limited: true,
       status: "Backfill required",
@@ -381,7 +430,7 @@ async function answerQuestion(
       comparison: `${delta === null ? "No" : percent(delta)} difference versus the median observed bucket`,
       formula: `${compact(bucket.total_transactions)} bucket transactions ÷ ${compact(median)} median bucket transactions`,
       explanation:
-        "This verifies the size and timing of the movement. The public aggregate feed does not provide dated per-service contributors or causal labels, so the Index does not claim why it happened without additional evidence.",
+        "This verifies the size and timing of the movement from direct chain evidence. The current attribution layer does not identify dated per-service contributors or causal labels, so the Index does not claim why it happened without additional evidence.",
       metric: "transactions",
       limited: true,
       status: "Magnitude verified; cause unverified",
@@ -401,6 +450,21 @@ async function answerQuestion(
     const leader = x402Value >= mppValue ? "x402" : "MPP";
     const share = total ? (Math.max(mppValue, x402Value) / total) * 100 : 0;
     const formatter = metric === "volume" || metric === "average" ? usd : compact;
+    if (metric === "volume") {
+      const combined = mpp.totalVolume + x402.totalVolume;
+      return {
+        ...common,
+        eyebrow: `Value comparison · ${range}`,
+        value: usd(combined),
+        change: null,
+        comparison: `MPP payment value ${usd(mpp.totalVolume)} · x402 payment value ${usd(x402.totalVolume)}`,
+        formula: `${usd(mpp.totalVolume)} + ${usd(x402.totalVolume)} = ${usd(combined)}`,
+        explanation:
+          "This adds MPP payment value on Tempo and terminal-recipient-normalized x402 value on Base for the same rolling window. It is not a complete measure of all machine payments.",
+        metric,
+        chartProtocols: ["mpp", "x402"],
+      };
+    }
     return {
       ...common,
       eyebrow: `${metric === "volume" ? "USD volume" : metric === "average" ? "Average payment" : "Transaction"} comparison · ${range}`,
@@ -409,7 +473,7 @@ async function answerQuestion(
       comparison: `${leader} leads the combined observed total`,
       formula: `MPP ${formatter(mppValue)} · x402 ${formatter(x402Value)}`,
       explanation:
-        "Both protocols use the same requested window. Counts remain source-indexed and combined payer or server identities are not cross-protocol deduplicated.",
+        "Both protocols use the same exact rolling window. Counts are independently observed; combined payer or recipient addresses are not cross-protocol deduplicated.",
       metric,
       chartProtocols: ["mpp", "x402"],
     };
@@ -461,19 +525,23 @@ async function answerQuestion(
       : null;
     return {
       ...common,
-      eyebrow: `Average payment · ${range}`,
+      eyebrow: `${protocol === "all" ? "Average observed payment" : protocol === "mpp" ? "Average MPP payment" : "Average x402 payment"} · ${range}`,
       value: usd(average, true),
       change: thirtyDayTrend,
       comparison:
         asksForThirtyDayChange && thirtyDayTrend !== null
           ? `30-day payment-size trend: ${percent(thirtyDayTrend)}, comparing the last third with the first third`
-          : `${label} observed payment size`,
+          : protocol === "all" ? "Combined average across MPP and x402" : protocol === "mpp" ? "Observed MPP payment size" : "Observed x402 payment size",
       formula:
         asksForThirtyDayChange
           ? `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} payments; 30-day trend = last-segment average ÷ first-segment average − 1`
           : `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} successful transactions`,
       explanation:
-        "Average payment size measures stablecoin settlement value per successful indexed payment. It excludes network fees and unrelated transfers. The 30-day change, when requested, is a within-window bucket trend rather than a comparison between overlapping rolling totals.",
+        protocol === "all"
+          ? "This divides the combined MPP and x402 payment value by their combined reconstructed payment count. The same address may appear in both protocols."
+          : protocol === "mpp"
+          ? "Average MPP payment size is identified MPP value divided by qualifying payments. The 30-day change, when requested, is a within-window bucket trend rather than a comparison between overlapping rolling totals."
+          : "This is payer-originated USDC value divided by reconstructed x402 payments. Receive-and-forward chains count once and resolve to the terminal recipient.",
       metric,
     };
   }
@@ -484,7 +552,7 @@ async function answerQuestion(
       eyebrow: `Active payer addresses · ${range}`,
       value: compact(current.uniqueSenders),
       change: null,
-      comparison: protocol === "all" ? "Protocol-level sum; not cross-protocol deduplicated" : "Distinct source-reported payer identifiers",
+      comparison: protocol === "all" ? "May include the same address on both protocols" : "Distinct directly observed payer identifiers",
       formula: `${compact(current.uniqueSenders)} distinct network-normalized payer addresses`,
       explanation:
         "This is not a count of people or autonomous agents. One actor may use several addresses, several actors may share one, and combined protocol identities may overlap.",
@@ -515,13 +583,13 @@ async function answerQuestion(
   if (metric === "servers") {
     return {
       ...common,
-      eyebrow: `Active server identities · ${range}`,
+      eyebrow: `Active recipient addresses · ${range}`,
       value: compact(current.uniqueRecipients),
       change: null,
-      comparison: protocol === "all" ? "Protocol-level sum; not unique companies" : "Distinct active payment recipients",
-      formula: `${compact(current.uniqueRecipients)} distinct source-reported recipient identities`,
+      comparison: protocol === "all" ? "May include the same address on both protocols" : "Distinct active payment recipients",
+      formula: `${compact(current.uniqueRecipients)} distinct directly observed recipient addresses`,
       explanation:
-        "This counts recipient identities with observed payments in the selected window. It differs from indexed service records, which count named directory origins.",
+        "This counts recipient addresses with observed payments in the selected window. It is not a count of servers, companies, or named directory origins.",
       metric,
     };
   }
@@ -529,13 +597,17 @@ async function answerQuestion(
   if (metric === "volume") {
     return {
       ...common,
-      eyebrow: `USD payment volume · ${range}`,
+      eyebrow: `${protocol === "all" ? "Combined payment value" : protocol === "mpp" ? "MPP payment value" : "x402 payment value"} · ${range}`,
       value: usd(current.totalVolume),
       change: null,
-      comparison: `${label} total observed settlement value`,
-      formula: `Sum of ${compact(current.totalTransactions)} successful payment values`,
+      comparison: `${label} directly observed value`,
+      formula: `Sum across ${compact(current.totalTransactions)} qualifying records`,
       explanation:
-        "Volume is the recorded stablecoin value of successful protocol-indexed payments in the requested window.",
+        protocol === "all"
+          ? "This is the sum of independently reconstructed MPP value on Tempo and terminal-recipient-normalized x402 value on Base for the same rolling window."
+          : protocol === "mpp"
+          ? "This is identified MPP payment value observed directly on Tempo in the requested rolling window."
+          : "This is payer-originated USDC payment value involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once and are attributed to the terminal recipient.",
       metric,
     };
   }
@@ -543,13 +615,13 @@ async function answerQuestion(
   const divisor = coverageDays(period.buckets, days);
   return {
     ...common,
-    eyebrow: `Successful transactions · ${range}`,
+    eyebrow: `Observed records · ${range}`,
     value: compact(current.totalTransactions),
     change: null,
     comparison: `${compact(current.totalTransactions / divisor)} average transactions per day`,
-    formula: `${compact(current.totalTransactions)} observed successful payment events`,
+    formula: `${compact(current.totalTransactions)} records matching the direct-source method`,
     explanation:
-      `This counts successful ${label} payments exposed by the selected public indexes. It is raw observed activity, not a quality-adjusted adoption estimate.`,
+      `This counts ${protocolData.measurementLabel.toLowerCase()} reconstructed from direct chain evidence. It is raw observed activity, not a quality-adjusted adoption estimate.`,
     metric: "transactions",
   };
 }

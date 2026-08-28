@@ -1,0 +1,853 @@
+{
+  "schemaVersion": 1,
+  "privacy": "Exact aggregate retention cells only; no raw or hashed identity identifiers are included.",
+  "protocol": "mpp",
+  "sourceKeys": [
+    "identity:mpp:tempo-attribution-rpc"
+  ],
+  "coverageStart": "2026-02-16T00:00:00.000Z",
+  "coverageEnd": "2026-08-11T00:00:00.000Z",
+  "completeThrough": "2026-07",
+  "cells": [
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 0,
+      "calendarMonth": "2026-02",
+      "cohortSize": 19,
+      "retained": 19,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 1,
+      "calendarMonth": "2026-03",
+      "cohortSize": 19,
+      "retained": 8,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 2,
+      "calendarMonth": "2026-04",
+      "cohortSize": 19,
+      "retained": 6,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 3,
+      "calendarMonth": "2026-05",
+      "cohortSize": 19,
+      "retained": 6,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 4,
+      "calendarMonth": "2026-06",
+      "cohortSize": 19,
+      "retained": 3,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 5,
+      "calendarMonth": "2026-07",
+      "cohortSize": 19,
+      "retained": 4,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 0,
+      "calendarMonth": "2026-03",
+      "cohortSize": 1436,
+      "retained": 1436,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 1,
+      "calendarMonth": "2026-04",
+      "cohortSize": 1436,
+      "retained": 328,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 2,
+      "calendarMonth": "2026-05",
+      "cohortSize": 1436,
+      "retained": 110,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 3,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1436,
+      "retained": 59,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 4,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1436,
+      "retained": 89,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 0,
+      "calendarMonth": "2026-04",
+      "cohortSize": 22317,
+      "retained": 22317,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 1,
+      "calendarMonth": "2026-05",
+      "cohortSize": 22317,
+      "retained": 3672,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 2,
+      "calendarMonth": "2026-06",
+      "cohortSize": 22317,
+      "retained": 1109,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 3,
+      "calendarMonth": "2026-07",
+      "cohortSize": 22317,
+      "retained": 999,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-05",
+      "offset": 0,
+      "calendarMonth": "2026-05",
+      "cohortSize": 60978,
+      "retained": 60978,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-05",
+      "offset": 1,
+      "calendarMonth": "2026-06",
+      "cohortSize": 60978,
+      "retained": 6084,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-05",
+      "offset": 2,
+      "calendarMonth": "2026-07",
+      "cohortSize": 60978,
+      "retained": 4679,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-06",
+      "offset": 0,
+      "calendarMonth": "2026-06",
+      "cohortSize": 37610,
+      "retained": 37610,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-06",
+      "offset": 1,
+      "calendarMonth": "2026-07",
+      "cohortSize": 37610,
+      "retained": 8217,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "activity",
+      "cohortMonth": "2026-07",
+      "offset": 0,
+      "calendarMonth": "2026-07",
+      "cohortSize": 57820,
+      "retained": 57820,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 0,
+      "calendarMonth": "2026-02",
+      "cohortSize": 19,
+      "retained": 19,
+      "leftCensored": true
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 1,
+      "calendarMonth": "2026-03",
+      "cohortSize": 19,
+      "retained": 8,
+      "leftCensored": true
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 2,
+      "calendarMonth": "2026-04",
+      "cohortSize": 19,
+      "retained": 6,
+      "leftCensored": true
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 3,
+      "calendarMonth": "2026-05",
+      "cohortSize": 19,
+      "retained": 6,
+      "leftCensored": true
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 4,
+      "calendarMonth": "2026-06",
+      "cohortSize": 19,
+      "retained": 3,
+      "leftCensored": true
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 5,
+      "calendarMonth": "2026-07",
+      "cohortSize": 19,
+      "retained": 4,
+      "leftCensored": true
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 0,
+      "calendarMonth": "2026-03",
+      "cohortSize": 1428,
+      "retained": 1428,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 1,
+      "calendarMonth": "2026-04",
+      "cohortSize": 1428,
+      "retained": 322,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 2,
+      "calendarMonth": "2026-05",
+      "cohortSize": 1428,
+      "retained": 104,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 3,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1428,
+      "retained": 56,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 4,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1428,
+      "retained": 85,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 0,
+      "calendarMonth": "2026-04",
+      "cohortSize": 21989,
+      "retained": 21989,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 1,
+      "calendarMonth": "2026-05",
+      "cohortSize": 21989,
+      "retained": 3589,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 2,
+      "calendarMonth": "2026-06",
+      "cohortSize": 21989,
+      "retained": 1063,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 3,
+      "calendarMonth": "2026-07",
+      "cohortSize": 21989,
+      "retained": 924,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-05",
+      "offset": 0,
+      "calendarMonth": "2026-05",
+      "cohortSize": 57279,
+      "retained": 57279,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-05",
+      "offset": 1,
+      "calendarMonth": "2026-06",
+      "cohortSize": 57279,
+      "retained": 5119,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-05",
+      "offset": 2,
+      "calendarMonth": "2026-07",
+      "cohortSize": 57279,
+      "retained": 3818,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-06",
+      "offset": 0,
+      "calendarMonth": "2026-06",
+      "cohortSize": 31369,
+      "retained": 31369,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-06",
+      "offset": 1,
+      "calendarMonth": "2026-07",
+      "cohortSize": 31369,
+      "retained": 4058,
+      "leftCensored": false
+    },
+    {
+      "role": "payer",
+      "mode": "acquisition",
+      "cohortMonth": "2026-07",
+      "offset": 0,
+      "calendarMonth": "2026-07",
+      "cohortSize": 48931,
+      "retained": 48931,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 0,
+      "calendarMonth": "2026-02",
+      "cohortSize": 31,
+      "retained": 31,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 1,
+      "calendarMonth": "2026-03",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 2,
+      "calendarMonth": "2026-04",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 3,
+      "calendarMonth": "2026-05",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 4,
+      "calendarMonth": "2026-06",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-02",
+      "offset": 5,
+      "calendarMonth": "2026-07",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 0,
+      "calendarMonth": "2026-03",
+      "cohortSize": 722,
+      "retained": 722,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 1,
+      "calendarMonth": "2026-04",
+      "cohortSize": 722,
+      "retained": 110,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 2,
+      "calendarMonth": "2026-05",
+      "cohortSize": 722,
+      "retained": 94,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 3,
+      "calendarMonth": "2026-06",
+      "cohortSize": 722,
+      "retained": 94,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-03",
+      "offset": 4,
+      "calendarMonth": "2026-07",
+      "cohortSize": 722,
+      "retained": 86,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 0,
+      "calendarMonth": "2026-04",
+      "cohortSize": 1059,
+      "retained": 1059,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 1,
+      "calendarMonth": "2026-05",
+      "cohortSize": 1059,
+      "retained": 147,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 2,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1059,
+      "retained": 129,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-04",
+      "offset": 3,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1059,
+      "retained": 118,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-05",
+      "offset": 0,
+      "calendarMonth": "2026-05",
+      "cohortSize": 1241,
+      "retained": 1241,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-05",
+      "offset": 1,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1241,
+      "retained": 189,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-05",
+      "offset": 2,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1241,
+      "retained": 157,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-06",
+      "offset": 0,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1409,
+      "retained": 1409,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-06",
+      "offset": 1,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1409,
+      "retained": 217,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "activity",
+      "cohortMonth": "2026-07",
+      "offset": 0,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1265,
+      "retained": 1265,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 0,
+      "calendarMonth": "2026-02",
+      "cohortSize": 31,
+      "retained": 31,
+      "leftCensored": true
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 1,
+      "calendarMonth": "2026-03",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": true
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 2,
+      "calendarMonth": "2026-04",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": true
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 3,
+      "calendarMonth": "2026-05",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": true
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 4,
+      "calendarMonth": "2026-06",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": true
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-02",
+      "offset": 5,
+      "calendarMonth": "2026-07",
+      "cohortSize": 31,
+      "retained": 10,
+      "leftCensored": true
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 0,
+      "calendarMonth": "2026-03",
+      "cohortSize": 712,
+      "retained": 712,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 1,
+      "calendarMonth": "2026-04",
+      "cohortSize": 712,
+      "retained": 102,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 2,
+      "calendarMonth": "2026-05",
+      "cohortSize": 712,
+      "retained": 86,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 3,
+      "calendarMonth": "2026-06",
+      "cohortSize": 712,
+      "retained": 86,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-03",
+      "offset": 4,
+      "calendarMonth": "2026-07",
+      "cohortSize": 712,
+      "retained": 78,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 0,
+      "calendarMonth": "2026-04",
+      "cohortSize": 947,
+      "retained": 947,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 1,
+      "calendarMonth": "2026-05",
+      "cohortSize": 947,
+      "retained": 54,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 2,
+      "calendarMonth": "2026-06",
+      "cohortSize": 947,
+      "retained": 38,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-04",
+      "offset": 3,
+      "calendarMonth": "2026-07",
+      "cohortSize": 947,
+      "retained": 33,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-05",
+      "offset": 0,
+      "calendarMonth": "2026-05",
+      "cohortSize": 1091,
+      "retained": 1091,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-05",
+      "offset": 1,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1091,
+      "retained": 65,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-05",
+      "offset": 2,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1091,
+      "retained": 43,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-06",
+      "offset": 0,
+      "calendarMonth": "2026-06",
+      "cohortSize": 1210,
+      "retained": 1210,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-06",
+      "offset": 1,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1210,
+      "retained": 65,
+      "leftCensored": false
+    },
+    {
+      "role": "payee",
+      "mode": "acquisition",
+      "cohortMonth": "2026-07",
+      "offset": 0,
+      "calendarMonth": "2026-07",
+      "cohortSize": 1036,
+      "retained": 1036,
+      "leftCensored": false
+    }
+  ]
+}

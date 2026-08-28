@@ -1,0 +1,3255 @@
+{
+  "generatedAt": "2026-08-10T06:15:28.767Z",
+  "purpose": "Internal MPPScan reconciliation; not a public product data source.",
+  "sourceWindow": {
+    "mppScanResponseDate": "2026-08-10T06:02:59.000Z",
+    "firstBucketStart": "2026-07-11T15:00:00.000Z",
+    "lastBucketEnd": "2026-08-10T06:02:59.000Z",
+    "bucketCount": 48,
+    "effectiveHours": 711.0497222222223,
+    "note": "Direct events are queried over the exact 48 bucket boundaries returned by MPPScan. Its live headline and materialized bucket sums can differ slightly at collection time."
+  },
+  "mppScan": {
+    "totalTransactions": 735353,
+    "totalVolume": 101126.421559,
+    "uniqueSenders": 45768,
+    "uniqueRecipients": 1208,
+    "bucketSumTransactions": 735243,
+    "bucketSumVolume": 101123.73307700001
+  },
+  "direct": {
+    "charges": {
+      "allTransferWithMemoLogs": 628019,
+      "validMppLogsAllTokens": 625113,
+      "validMppLogicalPaymentsAllTokens": 625113,
+      "strictLogs": 615300,
+      "strictLogicalPayments": 615300,
+      "strictTransactionHashes": 615300,
+      "strictVolumeUsd": 100099.681473,
+      "validMppVolumeUsdAllTokensAssumingSixDecimals": 100109.680938,
+      "mppTagOtherVersionLogs": 0,
+      "nonMppMemoLogs": 2906,
+      "payerAddresses": 45552,
+      "recipientAddresses": 15618,
+      "serverFingerprints": 1205,
+      "nonAnonymousClientFingerprints": 18,
+      "anonymousClientLogs": 609690,
+      "versions": {
+        "01": 625113
+      },
+      "tokens": {
+        "0x20c000000000000000000000b9537d11c60e8b50": {
+          "allLogs": 615997,
+          "validMppLogs": 613565,
+          "validMppVolumeRaw": "100012137976"
+        },
+        "0x20c0000000000000000000008b4c619d2eedec7a": {
+          "allLogs": 9813,
+          "validMppLogs": 9813,
+          "validMppVolumeRaw": "9999465"
+        },
+        "0x20c0000000000000000000000000000000000000": {
+          "allLogs": 1936,
+          "validMppLogs": 1735,
+          "validMppVolumeRaw": "87543497"
+        },
+        "0x20c000000000000000000000111111111e910f0f": {
+          "allLogs": 14,
+          "validMppLogs": 0,
+          "validMppVolumeRaw": "0"
+        },
+        "0x20c0000000000000000000006d194f9810e6f886": {
+          "allLogs": 23,
+          "validMppLogs": 0,
+          "validMppVolumeRaw": "0"
+        },
+        "0x20c00000000000000000000014f22ca97301eb73": {
+          "allLogs": 4,
+          "validMppLogs": 0,
+          "validMppVolumeRaw": "0"
+        },
+        "0x20c000000000000000000000d65b4808c85dbb81": {
+          "allLogs": 197,
+          "validMppLogs": 0,
+          "validMppVolumeRaw": "0"
+        },
+        "0x7ba3c9a39596e438b05c56dfc779700b58aea814": {
+          "allLogs": 8,
+          "validMppLogs": 0,
+          "validMppVolumeRaw": "0"
+        },
+        "0x20c00000000000000000000058d0b8b2cfdb358c": {
+          "allLogs": 27,
+          "validMppLogs": 0,
+          "validMppVolumeRaw": "0"
+        }
+      }
+    },
+    "sessions": {
+      "channelOpened": 121941,
+      "settled": 115237,
+      "settledDeltaUsdAssumingSixDecimals": 149.108326,
+      "topUp": 2568,
+      "closeRequested": 66,
+      "channelClosed": 332,
+      "closeRequestCancelled": 0,
+      "otherLogs": 0,
+      "payerAddresses": 880,
+      "payeeAddresses": 30,
+      "openedTokens": {
+        "0x20c000000000000000000000b9537d11c60e8b50": 121938,
+        "0x20c0000000000000000000000000000000000000": 3
+      }
+    }
+  },
+  "candidateComparisons": {
+    "strictCharges": {
+      "mppScan": 735243,
+      "candidate": 615300,
+      "delta": -119943,
+      "percentDelta": -16.31338210632403,
+      "meanAbsoluteBucketError": 2498.8125
+    },
+    "allTokenMppCharges": {
+      "mppScan": 735243,
+      "candidate": 625113,
+      "delta": -110130,
+      "percentDelta": -14.978721320706216,
+      "meanAbsoluteBucketError": 2294.375
+    },
+    "strictChargesPlusSessionSettlements": {
+      "mppScan": 735243,
+      "candidate": 730537,
+      "delta": -4706,
+      "percentDelta": -0.6400604970057518,
+      "meanAbsoluteBucketError": 103.95833333333333
+    },
+    "allTokenMppChargesPlusSessionSettlements": {
+      "mppScan": 735243,
+      "candidate": 740350,
+      "delta": 5107,
+      "percentDelta": 0.6946002886120642,
+      "meanAbsoluteBucketError": 270.6041666666667
+    },
+    "allTokenMppChargesPlusSettlementsAndCloses": {
+      "mppScan": 735243,
+      "candidate": 740682,
+      "delta": 5439,
+      "percentDelta": 0.7397554277973405,
+      "meanAbsoluteBucketError": 264.3125
+    }
+  },
+  "caveats": [
+    "MPPScan's private inclusion query is not available; candidate formulas are differential tests, not claims about its implementation.",
+    "Session settled delta is displayed as USD only under the six-decimal stablecoin assumption; opened-token coverage is reported separately.",
+    "ChannelClosed reports cumulative settled value, not the final incremental capture, so close volume is not inferred.",
+    "MPP server fingerprints, client fingerprints, payer addresses, and recipient addresses are distinct identity concepts."
+  ],
+  "buckets": [
+    {
+      "start": "2026-07-11T15:00:00.000Z",
+      "end": "2026-07-12T06:00:00.000Z",
+      "fromBlock": 29475065,
+      "toBlockExclusive": 29573932,
+      "mppScan": {
+        "transactions": 11526,
+        "volumeUsd": 1626.9011739999999,
+        "uniqueSenders": 3424,
+        "uniqueRecipients": 154
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11488,
+          "validMppLogsAllTokens": 11475,
+          "validMppLogicalPaymentsAllTokens": 11475,
+          "strictLogs": 11475,
+          "strictLogicalPayments": 11475,
+          "strictTransactionHashes": 11475,
+          "strictVolumeUsd": 1585.019743,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1585.019743,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 13,
+          "payerAddresses": 3419,
+          "recipientAddresses": 345,
+          "serverFingerprints": 153,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 10873,
+          "versions": {
+            "01": 11475
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11438,
+              "validMppLogs": 11430,
+              "validMppVolumeRaw": "1582319743"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 46,
+              "validMppLogs": 45,
+              "validMppVolumeRaw": "2700000"
+            },
+            "0x20c000000000000000000000111111111e910f0f": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 830,
+          "settled": 20,
+          "settledDeltaUsdAssumingSixDecimals": 0.028016,
+          "topUp": 2,
+          "closeRequested": 5,
+          "channelClosed": 32,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 163,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 830
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-12T06:00:00.000Z",
+      "end": "2026-07-12T21:00:00.000Z",
+      "fromBlock": 29573932,
+      "toBlockExclusive": 29672850,
+      "mppScan": {
+        "transactions": 12224,
+        "volumeUsd": 1589.408146000001,
+        "uniqueSenders": 3815,
+        "uniqueRecipients": 152
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 12092,
+          "validMppLogsAllTokens": 12081,
+          "validMppLogicalPaymentsAllTokens": 12081,
+          "strictLogs": 12081,
+          "strictLogicalPayments": 12081,
+          "strictTransactionHashes": 12081,
+          "strictVolumeUsd": 1545.690028,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1545.690028,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 11,
+          "payerAddresses": 3810,
+          "recipientAddresses": 361,
+          "serverFingerprints": 151,
+          "nonAnonymousClientFingerprints": 1,
+          "anonymousClientLogs": 11743,
+          "versions": {
+            "01": 12081
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 12044,
+              "validMppLogs": 12035,
+              "validMppVolumeRaw": "1545290028"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 48,
+              "validMppLogs": 46,
+              "validMppVolumeRaw": "400000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 176,
+          "settled": 119,
+          "settledDeltaUsdAssumingSixDecimals": 0.014118,
+          "topUp": 0,
+          "closeRequested": 5,
+          "channelClosed": 24,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 14,
+          "payeeAddresses": 5,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 176
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-12T21:00:00.000Z",
+      "end": "2026-07-13T12:00:00.000Z",
+      "fromBlock": 29672850,
+      "toBlockExclusive": 29771767,
+      "mppScan": {
+        "transactions": 11733,
+        "volumeUsd": 1446.9665829999997,
+        "uniqueSenders": 3365,
+        "uniqueRecipients": 96
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11757,
+          "validMppLogsAllTokens": 11730,
+          "validMppLogicalPaymentsAllTokens": 11730,
+          "strictLogs": 11730,
+          "strictLogicalPayments": 11730,
+          "strictTransactionHashes": 11730,
+          "strictVolumeUsd": 1446.966531,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1446.966531,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 27,
+          "payerAddresses": 3364,
+          "recipientAddresses": 272,
+          "serverFingerprints": 94,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 11678,
+          "versions": {
+            "01": 11730
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11533,
+              "validMppLogs": 11523,
+              "validMppVolumeRaw": "1437614531"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 209,
+              "validMppLogs": 207,
+              "validMppVolumeRaw": "9352000"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 9,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c000000000000000000000111111111e910f0f": {
+              "allLogs": 6,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 775,
+          "settled": 2,
+          "settledDeltaUsdAssumingSixDecimals": 0.000002,
+          "topUp": 5,
+          "closeRequested": 0,
+          "channelClosed": 1,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 160,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 775
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-13T12:00:00.000Z",
+      "end": "2026-07-14T03:00:00.000Z",
+      "fromBlock": 29771767,
+      "toBlockExclusive": 29870722,
+      "mppScan": {
+        "transactions": 15641,
+        "volumeUsd": 2736.2204540000007,
+        "uniqueSenders": 4213,
+        "uniqueRecipients": 124
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 15603,
+          "validMppLogsAllTokens": 15582,
+          "validMppLogicalPaymentsAllTokens": 15582,
+          "strictLogs": 15582,
+          "strictLogicalPayments": 15582,
+          "strictTransactionHashes": 15582,
+          "strictVolumeUsd": 2734.121536,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2734.121536,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 21,
+          "payerAddresses": 4213,
+          "recipientAddresses": 242,
+          "serverFingerprints": 123,
+          "nonAnonymousClientFingerprints": 1,
+          "anonymousClientLogs": 15294,
+          "versions": {
+            "01": 15582
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 14735,
+              "validMppLogs": 14721,
+              "validMppVolumeRaw": "2683582536"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 865,
+              "validMppLogs": 861,
+              "validMppVolumeRaw": "50539000"
+            },
+            "0x20c000000000000000000000111111111e910f0f": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 750,
+          "settled": 3,
+          "settledDeltaUsdAssumingSixDecimals": 0.000003,
+          "topUp": 2,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 159,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 750
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-14T03:00:00.000Z",
+      "end": "2026-07-14T18:00:00.000Z",
+      "fromBlock": 29870722,
+      "toBlockExclusive": 29969666,
+      "mppScan": {
+        "transactions": 13696,
+        "volumeUsd": 2571.4308969999993,
+        "uniqueSenders": 3615,
+        "uniqueRecipients": 122
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13718,
+          "validMppLogsAllTokens": 13689,
+          "validMppLogicalPaymentsAllTokens": 13689,
+          "strictLogs": 13689,
+          "strictLogicalPayments": 13689,
+          "strictTransactionHashes": 13689,
+          "strictVolumeUsd": 2569.930891,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2569.930891,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 29,
+          "payerAddresses": 3613,
+          "recipientAddresses": 309,
+          "serverFingerprints": 121,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 13384,
+          "versions": {
+            "01": 13689
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13708,
+              "validMppLogs": 13685,
+              "validMppVolumeRaw": "2569888891"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 6,
+              "validMppLogs": 4,
+              "validMppVolumeRaw": "42000"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 4,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 612,
+          "settled": 7,
+          "settledDeltaUsdAssumingSixDecimals": 1.500006,
+          "topUp": 0,
+          "closeRequested": 1,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 160,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 612
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-14T18:00:00.000Z",
+      "end": "2026-07-15T09:00:00.000Z",
+      "fromBlock": 29969666,
+      "toBlockExclusive": 30068557,
+      "mppScan": {
+        "transactions": 16416,
+        "volumeUsd": 2840.013802,
+        "uniqueSenders": 3583,
+        "uniqueRecipients": 96
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 16429,
+          "validMppLogsAllTokens": 16404,
+          "validMppLogicalPaymentsAllTokens": 16404,
+          "strictLogs": 16404,
+          "strictLogicalPayments": 16404,
+          "strictTransactionHashes": 16404,
+          "strictVolumeUsd": 2840.105807,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2840.105807,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 25,
+          "payerAddresses": 3581,
+          "recipientAddresses": 294,
+          "serverFingerprints": 95,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 16365,
+          "versions": {
+            "01": 16404
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 16371,
+              "validMppLogs": 16347,
+              "validMppVolumeRaw": "2838986807"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 58,
+              "validMppLogs": 57,
+              "validMppVolumeRaw": "1119000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 28,
+          "settled": 12,
+          "settledDeltaUsdAssumingSixDecimals": 0.02401,
+          "topUp": 214,
+          "closeRequested": 0,
+          "channelClosed": 2,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 5,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 28
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-15T09:00:00.000Z",
+      "end": "2026-07-16T00:00:00.000Z",
+      "fromBlock": 30068557,
+      "toBlockExclusive": 30166330,
+      "mppScan": {
+        "transactions": 14256,
+        "volumeUsd": 4329.1686,
+        "uniqueSenders": 3702,
+        "uniqueRecipients": 99
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 14169,
+          "validMppLogsAllTokens": 14140,
+          "validMppLogicalPaymentsAllTokens": 14140,
+          "strictLogs": 14140,
+          "strictLogicalPayments": 14140,
+          "strictTransactionHashes": 14140,
+          "strictVolumeUsd": 4293.336595,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 4293.336595,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 29,
+          "payerAddresses": 3700,
+          "recipientAddresses": 268,
+          "serverFingerprints": 98,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 13807,
+          "versions": {
+            "01": 14140
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 14033,
+              "validMppLogs": 14011,
+              "validMppVolumeRaw": "4290611595"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 136,
+              "validMppLogs": 129,
+              "validMppVolumeRaw": "2725000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 53,
+          "settled": 24,
+          "settledDeltaUsdAssumingSixDecimals": 0.000024,
+          "topUp": 19,
+          "closeRequested": 3,
+          "channelClosed": 4,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 10,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 53
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-16T00:00:00.000Z",
+      "end": "2026-07-16T15:00:00.000Z",
+      "fromBlock": 30166330,
+      "toBlockExclusive": 30263645,
+      "mppScan": {
+        "transactions": 14628,
+        "volumeUsd": 3043.080721999999,
+        "uniqueSenders": 3955,
+        "uniqueRecipients": 105
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 14687,
+          "validMppLogsAllTokens": 14511,
+          "validMppLogicalPaymentsAllTokens": 14511,
+          "strictLogs": 14511,
+          "strictLogicalPayments": 14511,
+          "strictTransactionHashes": 14511,
+          "strictVolumeUsd": 3017.015432,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 3017.015432,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 176,
+          "payerAddresses": 3954,
+          "recipientAddresses": 255,
+          "serverFingerprints": 104,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 14210,
+          "versions": {
+            "01": 14511
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 14581,
+              "validMppLogs": 14426,
+              "validMppVolumeRaw": "3014334432"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 106,
+              "validMppLogs": 85,
+              "validMppVolumeRaw": "2681000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3,
+          "settled": 1,
+          "settledDeltaUsdAssumingSixDecimals": 0.01,
+          "topUp": 0,
+          "closeRequested": 1,
+          "channelClosed": 2,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 2,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-16T15:00:00.000Z",
+      "end": "2026-07-17T06:00:00.000Z",
+      "fromBlock": 30263645,
+      "toBlockExclusive": 30356045,
+      "mppScan": {
+        "transactions": 14522,
+        "volumeUsd": 3955.729695999999,
+        "uniqueSenders": 3559,
+        "uniqueRecipients": 110
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 14541,
+          "validMppLogsAllTokens": 14414,
+          "validMppLogicalPaymentsAllTokens": 14414,
+          "strictLogs": 14414,
+          "strictLogicalPayments": 14414,
+          "strictTransactionHashes": 14414,
+          "strictVolumeUsd": 3927.740712,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 3927.740712,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 127,
+          "payerAddresses": 3555,
+          "recipientAddresses": 453,
+          "serverFingerprints": 109,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 14155,
+          "versions": {
+            "01": 14414
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 14475,
+              "validMppLogs": 14367,
+              "validMppVolumeRaw": "3924920712"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 65,
+              "validMppLogs": 47,
+              "validMppVolumeRaw": "2820000"
+            },
+            "0x20c00000000000000000000014f22ca97301eb73": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 20,
+          "settled": 8,
+          "settledDeltaUsdAssumingSixDecimals": 0.313005,
+          "topUp": 7,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 6,
+          "payeeAddresses": 6,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 20
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-17T06:00:00.000Z",
+      "end": "2026-07-17T21:00:00.000Z",
+      "fromBlock": 30356045,
+      "toBlockExclusive": 30454591,
+      "mppScan": {
+        "transactions": 15869,
+        "volumeUsd": 2677.4567880000004,
+        "uniqueSenders": 4566,
+        "uniqueRecipients": 118
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 15913,
+          "validMppLogsAllTokens": 15726,
+          "validMppLogicalPaymentsAllTokens": 15726,
+          "strictLogs": 15726,
+          "strictLogicalPayments": 15726,
+          "strictTransactionHashes": 15726,
+          "strictVolumeUsd": 2657.045118,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2657.045118,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 187,
+          "payerAddresses": 4561,
+          "recipientAddresses": 312,
+          "serverFingerprints": 117,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 15347,
+          "versions": {
+            "01": 15726
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 15863,
+              "validMppLogs": 15681,
+              "validMppVolumeRaw": "2654345118"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 49,
+              "validMppLogs": 45,
+              "validMppVolumeRaw": "2700000"
+            },
+            "0x20c00000000000000000000014f22ca97301eb73": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 15,
+          "settled": 10,
+          "settledDeltaUsdAssumingSixDecimals": 0.012006,
+          "topUp": 0,
+          "closeRequested": 1,
+          "channelClosed": 2,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 9,
+          "payeeAddresses": 5,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 15
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-17T21:00:00.000Z",
+      "end": "2026-07-18T12:00:00.000Z",
+      "fromBlock": 30454591,
+      "toBlockExclusive": 30553727,
+      "mppScan": {
+        "transactions": 14388,
+        "volumeUsd": 2308.1009619999995,
+        "uniqueSenders": 3983,
+        "uniqueRecipients": 172
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 14385,
+          "validMppLogsAllTokens": 14287,
+          "validMppLogicalPaymentsAllTokens": 14287,
+          "strictLogs": 14287,
+          "strictLogicalPayments": 14287,
+          "strictTransactionHashes": 14287,
+          "strictVolumeUsd": 2289.288094,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2289.288094,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 98,
+          "payerAddresses": 3982,
+          "recipientAddresses": 507,
+          "serverFingerprints": 170,
+          "nonAnonymousClientFingerprints": 5,
+          "anonymousClientLogs": 14262,
+          "versions": {
+            "01": 14287
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 14323,
+              "validMppLogs": 14243,
+              "validMppVolumeRaw": "2286648094"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 62,
+              "validMppLogs": 44,
+              "validMppVolumeRaw": "2640000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 11,
+          "settled": 3,
+          "settledDeltaUsdAssumingSixDecimals": 0.000003,
+          "topUp": 3,
+          "closeRequested": 0,
+          "channelClosed": 1,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 3,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 11
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-18T12:00:00.000Z",
+      "end": "2026-07-19T03:00:00.000Z",
+      "fromBlock": 30553727,
+      "toBlockExclusive": 30652649,
+      "mppScan": {
+        "transactions": 9879,
+        "volumeUsd": 1564.8499259999999,
+        "uniqueSenders": 4018,
+        "uniqueRecipients": 78
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 9877,
+          "validMppLogsAllTokens": 9813,
+          "validMppLogicalPaymentsAllTokens": 9813,
+          "strictLogs": 9813,
+          "strictLogicalPayments": 9813,
+          "strictTransactionHashes": 9813,
+          "strictVolumeUsd": 1557.554531,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1557.554531,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 64,
+          "payerAddresses": 4016,
+          "recipientAddresses": 175,
+          "serverFingerprints": 77,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 9504,
+          "versions": {
+            "01": 9813
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 9842,
+              "validMppLogs": 9780,
+              "validMppVolumeRaw": "1555574531"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 35,
+              "validMppLogs": 33,
+              "validMppVolumeRaw": "1980000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 6,
+          "settled": 5,
+          "settledDeltaUsdAssumingSixDecimals": 0.000005,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 2,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 6
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-19T03:00:00.000Z",
+      "end": "2026-07-19T18:00:00.000Z",
+      "fromBlock": 30652649,
+      "toBlockExclusive": 30751484,
+      "mppScan": {
+        "transactions": 13622,
+        "volumeUsd": 1844.124227,
+        "uniqueSenders": 4278,
+        "uniqueRecipients": 138
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13514,
+          "validMppLogsAllTokens": 13495,
+          "validMppLogicalPaymentsAllTokens": 13495,
+          "strictLogs": 13495,
+          "strictLogicalPayments": 13495,
+          "strictTransactionHashes": 13495,
+          "strictVolumeUsd": 1828.572549,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1828.572549,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 19,
+          "payerAddresses": 4277,
+          "recipientAddresses": 479,
+          "serverFingerprints": 137,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 13184,
+          "versions": {
+            "01": 13495
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13491,
+              "validMppLogs": 13476,
+              "validMppVolumeRaw": "1827432549"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 23,
+              "validMppLogs": 19,
+              "validMppVolumeRaw": "1140000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 6,
+          "settled": 4,
+          "settledDeltaUsdAssumingSixDecimals": 0.001003,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 1,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 3,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 6
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-19T18:00:00.000Z",
+      "end": "2026-07-20T09:00:00.000Z",
+      "fromBlock": 30751484,
+      "toBlockExclusive": 30850544,
+      "mppScan": {
+        "transactions": 12656,
+        "volumeUsd": 3295.9104110000003,
+        "uniqueSenders": 3630,
+        "uniqueRecipients": 79
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 12611,
+          "validMppLogsAllTokens": 12557,
+          "validMppLogicalPaymentsAllTokens": 12557,
+          "strictLogs": 12557,
+          "strictLogicalPayments": 12557,
+          "strictTransactionHashes": 12557,
+          "strictVolumeUsd": 3270.227796,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 3270.227796,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 54,
+          "payerAddresses": 3628,
+          "recipientAddresses": 387,
+          "serverFingerprints": 78,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 12534,
+          "versions": {
+            "01": 12557
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 12593,
+              "validMppLogs": 12542,
+              "validMppVolumeRaw": "3269327796"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 16,
+              "validMppLogs": 15,
+              "validMppVolumeRaw": "900000"
+            },
+            "0x20c000000000000000000000d65b4808c85dbb81": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c00000000000000000000014f22ca97301eb73": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 7,
+          "settled": 5,
+          "settledDeltaUsdAssumingSixDecimals": 0.008003,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 2,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 2,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 7
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-20T09:00:00.000Z",
+      "end": "2026-07-21T00:00:00.000Z",
+      "fromBlock": 30850544,
+      "toBlockExclusive": 30949517,
+      "mppScan": {
+        "transactions": 18308,
+        "volumeUsd": 4228.916371999998,
+        "uniqueSenders": 4919,
+        "uniqueRecipients": 100
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 18239,
+          "validMppLogsAllTokens": 18101,
+          "validMppLogicalPaymentsAllTokens": 18101,
+          "strictLogs": 18101,
+          "strictLogicalPayments": 18101,
+          "strictTransactionHashes": 18101,
+          "strictVolumeUsd": 4180.186391,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 4180.186391,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 138,
+          "payerAddresses": 4917,
+          "recipientAddresses": 430,
+          "serverFingerprints": 99,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 15075,
+          "versions": {
+            "01": 18101
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 18199,
+              "validMppLogs": 18086,
+              "validMppVolumeRaw": "4179286391"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 33,
+              "validMppLogs": 15,
+              "validMppVolumeRaw": "900000"
+            },
+            "0x20c000000000000000000000d65b4808c85dbb81": {
+              "allLogs": 7,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 31,
+          "settled": 2,
+          "settledDeltaUsdAssumingSixDecimals": 0.000002,
+          "topUp": 90,
+          "closeRequested": 16,
+          "channelClosed": 18,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 6,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 31
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-21T00:00:00.000Z",
+      "end": "2026-07-21T15:00:00.000Z",
+      "fromBlock": 30949517,
+      "toBlockExclusive": 31048498,
+      "mppScan": {
+        "transactions": 13241,
+        "volumeUsd": 2395.4877469999997,
+        "uniqueSenders": 4467,
+        "uniqueRecipients": 98
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13110,
+          "validMppLogsAllTokens": 13082,
+          "validMppLogicalPaymentsAllTokens": 13082,
+          "strictLogs": 13082,
+          "strictLogicalPayments": 13082,
+          "strictTransactionHashes": 13082,
+          "strictVolumeUsd": 2362.730367,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2362.730367,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 28,
+          "payerAddresses": 4465,
+          "recipientAddresses": 404,
+          "serverFingerprints": 97,
+          "nonAnonymousClientFingerprints": 1,
+          "anonymousClientLogs": 12798,
+          "versions": {
+            "01": 13082
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13086,
+              "validMppLogs": 13067,
+              "validMppVolumeRaw": "2361830367"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 19,
+              "validMppLogs": 15,
+              "validMppVolumeRaw": "900000"
+            },
+            "0x20c000000000000000000000d65b4808c85dbb81": {
+              "allLogs": 5,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 6,
+          "settled": 6,
+          "settledDeltaUsdAssumingSixDecimals": 0.000006,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 2,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 6
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-21T15:00:00.000Z",
+      "end": "2026-07-22T06:00:00.000Z",
+      "fromBlock": 31048498,
+      "toBlockExclusive": 31145600,
+      "mppScan": {
+        "transactions": 11107,
+        "volumeUsd": 2697.639474000002,
+        "uniqueSenders": 3988,
+        "uniqueRecipients": 92
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11188,
+          "validMppLogsAllTokens": 10967,
+          "validMppLogicalPaymentsAllTokens": 10967,
+          "strictLogs": 10967,
+          "strictLogicalPayments": 10967,
+          "strictTransactionHashes": 10967,
+          "strictVolumeUsd": 2668.421979,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2668.421979,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 221,
+          "payerAddresses": 3981,
+          "recipientAddresses": 269,
+          "serverFingerprints": 89,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 10956,
+          "versions": {
+            "01": 10967
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10970,
+              "validMppLogs": 10952,
+              "validMppVolumeRaw": "2667521979"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 35,
+              "validMppLogs": 15,
+              "validMppVolumeRaw": "900000"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c000000000000000000000111111111e910f0f": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c000000000000000000000d65b4808c85dbb81": {
+              "allLogs": 179,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 1411,
+          "settled": 2,
+          "settledDeltaUsdAssumingSixDecimals": 0.000002,
+          "topUp": 16,
+          "closeRequested": 0,
+          "channelClosed": 35,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 167,
+          "payeeAddresses": 6,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 1411
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-22T06:00:00.000Z",
+      "end": "2026-07-22T21:00:00.000Z",
+      "fromBlock": 31145600,
+      "toBlockExclusive": 31242134,
+      "mppScan": {
+        "transactions": 14183,
+        "volumeUsd": 2586.989567999999,
+        "uniqueSenders": 4479,
+        "uniqueRecipients": 140
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 14021,
+          "validMppLogsAllTokens": 13997,
+          "validMppLogicalPaymentsAllTokens": 13997,
+          "strictLogs": 13997,
+          "strictLogicalPayments": 13997,
+          "strictTransactionHashes": 13997,
+          "strictVolumeUsd": 2553.73154,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2553.73154,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 24,
+          "payerAddresses": 4478,
+          "recipientAddresses": 303,
+          "serverFingerprints": 139,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 13722,
+          "versions": {
+            "01": 13997
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13998,
+              "validMppLogs": 13982,
+              "validMppVolumeRaw": "2552831540"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 18,
+              "validMppLogs": 15,
+              "validMppVolumeRaw": "900000"
+            },
+            "0x20c000000000000000000000d65b4808c85dbb81": {
+              "allLogs": 5,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3972,
+          "settled": 0,
+          "settledDeltaUsdAssumingSixDecimals": 0,
+          "topUp": 200,
+          "closeRequested": 14,
+          "channelClosed": 12,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 173,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3972
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-22T21:00:00.000Z",
+      "end": "2026-07-23T12:00:00.000Z",
+      "fromBlock": 31242134,
+      "toBlockExclusive": 31338546,
+      "mppScan": {
+        "transactions": 14856,
+        "volumeUsd": 3350.464664000001,
+        "uniqueSenders": 4029,
+        "uniqueRecipients": 102
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11231,
+          "validMppLogsAllTokens": 11211,
+          "validMppLogicalPaymentsAllTokens": 11211,
+          "strictLogs": 11211,
+          "strictLogicalPayments": 11211,
+          "strictTransactionHashes": 11211,
+          "strictVolumeUsd": 3310.69724,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 3310.69724,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 20,
+          "payerAddresses": 3872,
+          "recipientAddresses": 386,
+          "serverFingerprints": 100,
+          "nonAnonymousClientFingerprints": 1,
+          "anonymousClientLogs": 11183,
+          "versions": {
+            "01": 11211
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11215,
+              "validMppLogs": 11196,
+              "validMppVolumeRaw": "3309797240"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 16,
+              "validMppLogs": 15,
+              "validMppVolumeRaw": "900000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3936,
+          "settled": 3531,
+          "settledDeltaUsdAssumingSixDecimals": 10.421425,
+          "topUp": 18,
+          "closeRequested": 1,
+          "channelClosed": 3,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 163,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3936
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-23T12:00:00.000Z",
+      "end": "2026-07-24T03:00:00.000Z",
+      "fromBlock": 31338546,
+      "toBlockExclusive": 31435062,
+      "mppScan": {
+        "transactions": 19594,
+        "volumeUsd": 2894.9952400000006,
+        "uniqueSenders": 4238,
+        "uniqueRecipients": 114
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 15557,
+          "validMppLogsAllTokens": 15511,
+          "validMppLogicalPaymentsAllTokens": 15511,
+          "strictLogs": 15511,
+          "strictLogicalPayments": 15511,
+          "strictTransactionHashes": 15511,
+          "strictVolumeUsd": 2855.462278,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2855.462278,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 46,
+          "payerAddresses": 4083,
+          "recipientAddresses": 469,
+          "serverFingerprints": 113,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 15209,
+          "versions": {
+            "01": 15511
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 15550,
+              "validMppLogs": 15505,
+              "validMppVolumeRaw": "2855102278"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 6,
+              "validMppLogs": 6,
+              "validMppVolumeRaw": "360000"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3907,
+          "settled": 3934,
+          "settledDeltaUsdAssumingSixDecimals": 11.158421,
+          "topUp": 2,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 164,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3907
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-24T03:00:00.000Z",
+      "end": "2026-07-24T18:00:00.000Z",
+      "fromBlock": 31435062,
+      "toBlockExclusive": 31532040,
+      "mppScan": {
+        "transactions": 19320,
+        "volumeUsd": 2605.2187609999996,
+        "uniqueSenders": 4452,
+        "uniqueRecipients": 98
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 15224,
+          "validMppLogsAllTokens": 15209,
+          "validMppLogicalPaymentsAllTokens": 15209,
+          "strictLogs": 15209,
+          "strictLogicalPayments": 15209,
+          "strictTransactionHashes": 15209,
+          "strictVolumeUsd": 2580.917293,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2580.917293,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 15,
+          "payerAddresses": 4299,
+          "recipientAddresses": 380,
+          "serverFingerprints": 96,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 14922,
+          "versions": {
+            "01": 15209
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 15222,
+              "validMppLogs": 15209,
+              "validMppVolumeRaw": "2580917293"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3945,
+          "settled": 3953,
+          "settledDeltaUsdAssumingSixDecimals": 5.732661,
+          "topUp": 3,
+          "closeRequested": 1,
+          "channelClosed": 3,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 159,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3943,
+            "0x20c0000000000000000000000000000000000000": 2
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-24T18:00:00.000Z",
+      "end": "2026-07-25T09:00:00.000Z",
+      "fromBlock": 31532040,
+      "toBlockExclusive": 31628995,
+      "mppScan": {
+        "transactions": 16277,
+        "volumeUsd": 1463.5140339999998,
+        "uniqueSenders": 3973,
+        "uniqueRecipients": 151
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 12188,
+          "validMppLogsAllTokens": 12178,
+          "validMppLogicalPaymentsAllTokens": 12178,
+          "strictLogs": 12178,
+          "strictLogicalPayments": 12178,
+          "strictTransactionHashes": 12178,
+          "strictVolumeUsd": 1414.171863,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1414.171863,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 10,
+          "payerAddresses": 3816,
+          "recipientAddresses": 951,
+          "serverFingerprints": 148,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 12089,
+          "versions": {
+            "01": 12178
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 12185,
+              "validMppLogs": 12178,
+              "validMppVolumeRaw": "1414171863"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3951,
+          "settled": 3948,
+          "settledDeltaUsdAssumingSixDecimals": 11.855759,
+          "topUp": 1395,
+          "closeRequested": 5,
+          "channelClosed": 13,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 162,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3950,
+            "0x20c0000000000000000000000000000000000000": 1
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-25T09:00:00.000Z",
+      "end": "2026-07-26T00:00:00.000Z",
+      "fromBlock": 31628995,
+      "toBlockExclusive": 31725920,
+      "mppScan": {
+        "transactions": 17868,
+        "volumeUsd": 1804.2948749999982,
+        "uniqueSenders": 4674,
+        "uniqueRecipients": 132
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13767,
+          "validMppLogsAllTokens": 13754,
+          "validMppLogicalPaymentsAllTokens": 13754,
+          "strictLogs": 13754,
+          "strictLogicalPayments": 13754,
+          "strictTransactionHashes": 13754,
+          "strictVolumeUsd": 1771.340483,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1771.340483,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 13,
+          "payerAddresses": 4518,
+          "recipientAddresses": 522,
+          "serverFingerprints": 130,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 13389,
+          "versions": {
+            "01": 13754
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13764,
+              "validMppLogs": 13754,
+              "validMppVolumeRaw": "1771340483"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3914,
+          "settled": 3930,
+          "settledDeltaUsdAssumingSixDecimals": 11.62882,
+          "topUp": 6,
+          "closeRequested": 0,
+          "channelClosed": 1,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 163,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3914
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-26T00:00:00.000Z",
+      "end": "2026-07-26T15:00:00.000Z",
+      "fromBlock": 31725920,
+      "toBlockExclusive": 31822918,
+      "mppScan": {
+        "transactions": 14267,
+        "volumeUsd": 1254.6268899999998,
+        "uniqueSenders": 3790,
+        "uniqueRecipients": 136
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10602,
+          "validMppLogsAllTokens": 10585,
+          "validMppLogicalPaymentsAllTokens": 10585,
+          "strictLogs": 10183,
+          "strictLogicalPayments": 10183,
+          "strictTransactionHashes": 10183,
+          "strictVolumeUsd": 1223.243584,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1223.832949,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 17,
+          "payerAddresses": 3637,
+          "recipientAddresses": 418,
+          "serverFingerprints": 136,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 10466,
+          "versions": {
+            "01": 10585
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10199,
+              "validMppLogs": 10183,
+              "validMppVolumeRaw": "1223243584"
+            },
+            "0x20c0000000000000000000008b4c619d2eedec7a": {
+              "allLogs": 402,
+              "validMppLogs": 402,
+              "validMppVolumeRaw": "589365"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3927,
+          "settled": 3926,
+          "settledDeltaUsdAssumingSixDecimals": 3.307775,
+          "topUp": 2,
+          "closeRequested": 0,
+          "channelClosed": 3,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 159,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3927
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-26T15:00:00.000Z",
+      "end": "2026-07-27T06:00:00.000Z",
+      "fromBlock": 31822918,
+      "toBlockExclusive": 31919854,
+      "mppScan": {
+        "transactions": 16293,
+        "volumeUsd": 1340.8342810000004,
+        "uniqueSenders": 3818,
+        "uniqueRecipients": 93
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13954,
+          "validMppLogsAllTokens": 13946,
+          "validMppLogicalPaymentsAllTokens": 13946,
+          "strictLogs": 12222,
+          "strictLogicalPayments": 12222,
+          "strictTransactionHashes": 12222,
+          "strictVolumeUsd": 1288.515845,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1290.239845,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 8,
+          "payerAddresses": 3665,
+          "recipientAddresses": 381,
+          "serverFingerprints": 93,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 13838,
+          "versions": {
+            "01": 13946
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 12229,
+              "validMppLogs": 12222,
+              "validMppVolumeRaw": "1288515845"
+            },
+            "0x20c0000000000000000000008b4c619d2eedec7a": {
+              "allLogs": 1724,
+              "validMppLogs": 1724,
+              "validMppVolumeRaw": "1724000"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3914,
+          "settled": 3911,
+          "settledDeltaUsdAssumingSixDecimals": 7.504619,
+          "topUp": 0,
+          "closeRequested": 3,
+          "channelClosed": 6,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 157,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3914
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-27T06:00:00.000Z",
+      "end": "2026-07-27T21:00:00.000Z",
+      "fromBlock": 31919854,
+      "toBlockExclusive": 32016816,
+      "mppScan": {
+        "transactions": 20827,
+        "volumeUsd": 3116.696367,
+        "uniqueSenders": 5449,
+        "uniqueRecipients": 103
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 19475,
+          "validMppLogsAllTokens": 19454,
+          "validMppLogicalPaymentsAllTokens": 19454,
+          "strictLogs": 16279,
+          "strictLogicalPayments": 16279,
+          "strictTransactionHashes": 16279,
+          "strictVolumeUsd": 3087.249287,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 3090.424287,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 21,
+          "payerAddresses": 5262,
+          "recipientAddresses": 585,
+          "serverFingerprints": 101,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 19077,
+          "versions": {
+            "01": 19454
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 16297,
+              "validMppLogs": 16278,
+              "validMppVolumeRaw": "3087239287"
+            },
+            "0x20c0000000000000000000008b4c619d2eedec7a": {
+              "allLogs": 3175,
+              "validMppLogs": 3175,
+              "validMppVolumeRaw": "3175000"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 1,
+              "validMppVolumeRaw": "10000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3939,
+          "settled": 4364,
+          "settledDeltaUsdAssumingSixDecimals": 3.526191,
+          "topUp": 1,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 305,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3939
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-27T21:00:00.000Z",
+      "end": "2026-07-28T12:00:00.000Z",
+      "fromBlock": 32016816,
+      "toBlockExclusive": 32113817,
+      "mppScan": {
+        "transactions": 32761,
+        "volumeUsd": 13700.195927000008,
+        "uniqueSenders": 6599,
+        "uniqueRecipients": 119
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 31941,
+          "validMppLogsAllTokens": 31885,
+          "validMppLogicalPaymentsAllTokens": 31885,
+          "strictLogs": 28566,
+          "strictLogicalPayments": 28566,
+          "strictTransactionHashes": 28566,
+          "strictVolumeUsd": 13579.776291,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 13583.095291,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 56,
+          "payerAddresses": 6444,
+          "recipientAddresses": 472,
+          "serverFingerprints": 119,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 31776,
+          "versions": {
+            "01": 31885
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 28620,
+              "validMppLogs": 28566,
+              "validMppVolumeRaw": "13579776291"
+            },
+            "0x20c0000000000000000000008b4c619d2eedec7a": {
+              "allLogs": 3319,
+              "validMppLogs": 3319,
+              "validMppVolumeRaw": "3319000"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3955,
+          "settled": 3968,
+          "settledDeltaUsdAssumingSixDecimals": 7.340239,
+          "topUp": 136,
+          "closeRequested": 0,
+          "channelClosed": 3,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 162,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3955
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-28T12:00:00.000Z",
+      "end": "2026-07-29T03:00:00.000Z",
+      "fromBlock": 32113817,
+      "toBlockExclusive": 32210521,
+      "mppScan": {
+        "transactions": 19040,
+        "volumeUsd": 3041.371544000001,
+        "uniqueSenders": 4872,
+        "uniqueRecipients": 160
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 15762,
+          "validMppLogsAllTokens": 15735,
+          "validMppLogicalPaymentsAllTokens": 15735,
+          "strictLogs": 14543,
+          "strictLogicalPayments": 14543,
+          "strictTransactionHashes": 14543,
+          "strictVolumeUsd": 2991.459794,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 2992.651794,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 27,
+          "payerAddresses": 4695,
+          "recipientAddresses": 418,
+          "serverFingerprints": 158,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 15366,
+          "versions": {
+            "01": 15735
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 14568,
+              "validMppLogs": 14543,
+              "validMppVolumeRaw": "2991459794"
+            },
+            "0x20c0000000000000000000008b4c619d2eedec7a": {
+              "allLogs": 1192,
+              "validMppLogs": 1192,
+              "validMppVolumeRaw": "1192000"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3944,
+          "settled": 4320,
+          "settledDeltaUsdAssumingSixDecimals": 5.069813,
+          "topUp": 160,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 309,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3944
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-29T03:00:00.000Z",
+      "end": "2026-07-29T18:00:00.000Z",
+      "fromBlock": 32210521,
+      "toBlockExclusive": 32306710,
+      "mppScan": {
+        "transactions": 14958,
+        "volumeUsd": 678.9926419999999,
+        "uniqueSenders": 4194,
+        "uniqueRecipients": 159
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11126,
+          "validMppLogsAllTokens": 11116,
+          "validMppLogicalPaymentsAllTokens": 11116,
+          "strictLogs": 11116,
+          "strictLogicalPayments": 11116,
+          "strictTransactionHashes": 11116,
+          "strictVolumeUsd": 662.468563,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 662.468563,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 10,
+          "payerAddresses": 4035,
+          "recipientAddresses": 374,
+          "serverFingerprints": 154,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 10730,
+          "versions": {
+            "01": 11116
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11122,
+              "validMppLogs": 11115,
+              "validMppVolumeRaw": "662070066"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 1,
+              "validMppVolumeRaw": "398497"
+            },
+            "0x20c0000000000000000000006d194f9810e6f886": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x7ba3c9a39596e438b05c56dfc779700b58aea814": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3756,
+          "settled": 3733,
+          "settledDeltaUsdAssumingSixDecimals": 5.295777,
+          "topUp": 96,
+          "closeRequested": 0,
+          "channelClosed": 4,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 169,
+          "payeeAddresses": 8,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3756
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-29T18:00:00.000Z",
+      "end": "2026-07-30T09:00:00.000Z",
+      "fromBlock": 32306710,
+      "toBlockExclusive": 32402900,
+      "mppScan": {
+        "transactions": 13164,
+        "volumeUsd": 481.19166900000016,
+        "uniqueSenders": 3294,
+        "uniqueRecipients": 99
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 9155,
+          "validMppLogsAllTokens": 9147,
+          "validMppLogicalPaymentsAllTokens": 9147,
+          "strictLogs": 9147,
+          "strictLogicalPayments": 9147,
+          "strictTransactionHashes": 9147,
+          "strictVolumeUsd": 465.913506,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 465.913506,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 8,
+          "payerAddresses": 3137,
+          "recipientAddresses": 308,
+          "serverFingerprints": 96,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 9036,
+          "versions": {
+            "01": 9147
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 9151,
+              "validMppLogs": 9147,
+              "validMppVolumeRaw": "465913506"
+            },
+            "0x20c000000000000000000000111111111e910f0f": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3956,
+          "settled": 3912,
+          "settledDeltaUsdAssumingSixDecimals": 3.341942,
+          "topUp": 26,
+          "closeRequested": 0,
+          "channelClosed": 4,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 168,
+          "payeeAddresses": 8,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3956
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-30T09:00:00.000Z",
+      "end": "2026-07-31T00:00:00.000Z",
+      "fromBlock": 32402900,
+      "toBlockExclusive": 32498965,
+      "mppScan": {
+        "transactions": 14439,
+        "volumeUsd": 508.1161020000002,
+        "uniqueSenders": 3831,
+        "uniqueRecipients": 104
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10271,
+          "validMppLogsAllTokens": 10260,
+          "validMppLogicalPaymentsAllTokens": 10260,
+          "strictLogs": 10260,
+          "strictLogicalPayments": 10260,
+          "strictTransactionHashes": 10260,
+          "strictVolumeUsd": 496.745727,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 496.745727,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 11,
+          "payerAddresses": 3675,
+          "recipientAddresses": 244,
+          "serverFingerprints": 101,
+          "nonAnonymousClientFingerprints": 5,
+          "anonymousClientLogs": 9763,
+          "versions": {
+            "01": 10260
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10268,
+              "validMppLogs": 10260,
+              "validMppVolumeRaw": "496745727"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x7ba3c9a39596e438b05c56dfc779700b58aea814": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 4092,
+          "settled": 3948,
+          "settledDeltaUsdAssumingSixDecimals": 3.594314,
+          "topUp": 28,
+          "closeRequested": 3,
+          "channelClosed": 148,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 172,
+          "payeeAddresses": 10,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 4092
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-31T00:00:00.000Z",
+      "end": "2026-07-31T15:00:00.000Z",
+      "fromBlock": 32498965,
+      "toBlockExclusive": 32595141,
+      "mppScan": {
+        "transactions": 14249,
+        "volumeUsd": 458.6223899999998,
+        "uniqueSenders": 3819,
+        "uniqueRecipients": 110
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10258,
+          "validMppLogsAllTokens": 10245,
+          "validMppLogicalPaymentsAllTokens": 10245,
+          "strictLogs": 10245,
+          "strictLogicalPayments": 10245,
+          "strictTransactionHashes": 10245,
+          "strictVolumeUsd": 451.333164,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 451.333164,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 13,
+          "payerAddresses": 3665,
+          "recipientAddresses": 409,
+          "serverFingerprints": 108,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 9855,
+          "versions": {
+            "01": 10245
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10251,
+              "validMppLogs": 10245,
+              "validMppVolumeRaw": "451333164"
+            },
+            "0x7ba3c9a39596e438b05c56dfc779700b58aea814": {
+              "allLogs": 4,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3891,
+          "settled": 3890,
+          "settledDeltaUsdAssumingSixDecimals": 3.308166,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 158,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3891
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-07-31T15:00:00.000Z",
+      "end": "2026-08-01T06:00:00.000Z",
+      "fromBlock": 32595141,
+      "toBlockExclusive": 32691500,
+      "mppScan": {
+        "transactions": 12838,
+        "volumeUsd": 440.08762900000005,
+        "uniqueSenders": 3146,
+        "uniqueRecipients": 99
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 9102,
+          "validMppLogsAllTokens": 9068,
+          "validMppLogicalPaymentsAllTokens": 9068,
+          "strictLogs": 9068,
+          "strictLogicalPayments": 9068,
+          "strictTransactionHashes": 9068,
+          "strictVolumeUsd": 435.055646,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 435.055646,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 34,
+          "payerAddresses": 2994,
+          "recipientAddresses": 297,
+          "serverFingerprints": 97,
+          "nonAnonymousClientFingerprints": 5,
+          "anonymousClientLogs": 8945,
+          "versions": {
+            "01": 9068
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 9077,
+              "validMppLogs": 9068,
+              "validMppVolumeRaw": "435055646"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 11,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c00000000000000000000058d0b8b2cfdb358c": {
+              "allLogs": 14,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3654,
+          "settled": 3663,
+          "settledDeltaUsdAssumingSixDecimals": 3.141331,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 156,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3654
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-01T06:00:00.000Z",
+      "end": "2026-08-01T21:00:00.000Z",
+      "fromBlock": 32691500,
+      "toBlockExclusive": 32787914,
+      "mppScan": {
+        "transactions": 17392,
+        "volumeUsd": 528.7993700000001,
+        "uniqueSenders": 3932,
+        "uniqueRecipients": 85
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13211,
+          "validMppLogsAllTokens": 13199,
+          "validMppLogicalPaymentsAllTokens": 13199,
+          "strictLogs": 13199,
+          "strictLogicalPayments": 13199,
+          "strictTransactionHashes": 13199,
+          "strictVolumeUsd": 515.735366,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 515.735366,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 12,
+          "payerAddresses": 3742,
+          "recipientAddresses": 307,
+          "serverFingerprints": 85,
+          "nonAnonymousClientFingerprints": 5,
+          "anonymousClientLogs": 12727,
+          "versions": {
+            "01": 13199
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13209,
+              "validMppLogs": 13199,
+              "validMppVolumeRaw": "515735366"
+            },
+            "0x7ba3c9a39596e438b05c56dfc779700b58aea814": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3820,
+          "settled": 4011,
+          "settledDeltaUsdAssumingSixDecimals": 3.362564,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 286,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3820
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-01T21:00:00.000Z",
+      "end": "2026-08-02T12:00:00.000Z",
+      "fromBlock": 32787914,
+      "toBlockExclusive": 32884301,
+      "mppScan": {
+        "transactions": 17355,
+        "volumeUsd": 381.89399800000024,
+        "uniqueSenders": 3000,
+        "uniqueRecipients": 84
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 13159,
+          "validMppLogsAllTokens": 13146,
+          "validMppLogicalPaymentsAllTokens": 13146,
+          "strictLogs": 13146,
+          "strictLogicalPayments": 13146,
+          "strictTransactionHashes": 13146,
+          "strictVolumeUsd": 371.531954,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 371.531954,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 13,
+          "payerAddresses": 2796,
+          "recipientAddresses": 314,
+          "serverFingerprints": 84,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 12853,
+          "versions": {
+            "01": 13146
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 13154,
+              "validMppLogs": 13146,
+              "validMppVolumeRaw": "371531954"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 5,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3815,
+          "settled": 4052,
+          "settledDeltaUsdAssumingSixDecimals": 3.70738,
+          "topUp": 7,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 287,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3815
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-02T12:00:00.000Z",
+      "end": "2026-08-03T03:00:00.000Z",
+      "fromBlock": 32884301,
+      "toBlockExclusive": 32980478,
+      "mppScan": {
+        "transactions": 14098,
+        "volumeUsd": 333.58521400000024,
+        "uniqueSenders": 3673,
+        "uniqueRecipients": 107
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10154,
+          "validMppLogsAllTokens": 10147,
+          "validMppLogicalPaymentsAllTokens": 10147,
+          "strictLogs": 10147,
+          "strictLogicalPayments": 10147,
+          "strictTransactionHashes": 10147,
+          "strictVolumeUsd": 328.669628,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 328.669628,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 7,
+          "payerAddresses": 3522,
+          "recipientAddresses": 445,
+          "serverFingerprints": 106,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 9641,
+          "versions": {
+            "01": 10147
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10154,
+              "validMppLogs": 10147,
+              "validMppVolumeRaw": "328669628"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3842,
+          "settled": 3841,
+          "settledDeltaUsdAssumingSixDecimals": 3.260401,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 161,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3842
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-03T03:00:00.000Z",
+      "end": "2026-08-03T18:00:00.000Z",
+      "fromBlock": 32980478,
+      "toBlockExclusive": 33076728,
+      "mppScan": {
+        "transactions": 15790,
+        "volumeUsd": 515.0528320000001,
+        "uniqueSenders": 3940,
+        "uniqueRecipients": 109
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11472,
+          "validMppLogsAllTokens": 11389,
+          "validMppLogicalPaymentsAllTokens": 11389,
+          "strictLogs": 11389,
+          "strictLogicalPayments": 11389,
+          "strictTransactionHashes": 11389,
+          "strictVolumeUsd": 505.335811,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 505.335811,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 83,
+          "payerAddresses": 3763,
+          "recipientAddresses": 371,
+          "serverFingerprints": 108,
+          "nonAnonymousClientFingerprints": 5,
+          "anonymousClientLogs": 10977,
+          "versions": {
+            "01": 11389
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11463,
+              "validMppLogs": 11389,
+              "validMppVolumeRaw": "505335811"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 4,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c00000000000000000000058d0b8b2cfdb358c": {
+              "allLogs": 5,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3821,
+          "settled": 4242,
+          "settledDeltaUsdAssumingSixDecimals": 3.386314,
+          "topUp": 7,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 299,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3821
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-03T18:00:00.000Z",
+      "end": "2026-08-04T09:00:00.000Z",
+      "fromBlock": 33076728,
+      "toBlockExclusive": 33173149,
+      "mppScan": {
+        "transactions": 13377,
+        "volumeUsd": 365.3532559999997,
+        "uniqueSenders": 2847,
+        "uniqueRecipients": 101
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 9547,
+          "validMppLogsAllTokens": 9417,
+          "validMppLogicalPaymentsAllTokens": 9417,
+          "strictLogs": 9416,
+          "strictLogicalPayments": 9416,
+          "strictTransactionHashes": 9416,
+          "strictVolumeUsd": 358.907437,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 358.907537,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 130,
+          "payerAddresses": 2697,
+          "recipientAddresses": 296,
+          "serverFingerprints": 99,
+          "nonAnonymousClientFingerprints": 5,
+          "anonymousClientLogs": 9275,
+          "versions": {
+            "01": 9417
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 9539,
+              "validMppLogs": 9416,
+              "validMppVolumeRaw": "358907437"
+            },
+            "0x20c0000000000000000000008b4c619d2eedec7a": {
+              "allLogs": 1,
+              "validMppLogs": 1,
+              "validMppVolumeRaw": "100"
+            },
+            "0x20c00000000000000000000058d0b8b2cfdb358c": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 5,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3831,
+          "settled": 3838,
+          "settledDeltaUsdAssumingSixDecimals": 3.292735,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 154,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3831
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-04T09:00:00.000Z",
+      "end": "2026-08-05T00:00:00.000Z",
+      "fromBlock": 33173149,
+      "toBlockExclusive": 33269584,
+      "mppScan": {
+        "transactions": 14106,
+        "volumeUsd": 540.2769920000001,
+        "uniqueSenders": 3570,
+        "uniqueRecipients": 79
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10139,
+          "validMppLogsAllTokens": 10129,
+          "validMppLogicalPaymentsAllTokens": 10129,
+          "strictLogs": 10129,
+          "strictLogicalPayments": 10129,
+          "strictTransactionHashes": 10129,
+          "strictVolumeUsd": 533.408192,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 533.408192,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 10,
+          "payerAddresses": 3418,
+          "recipientAddresses": 287,
+          "serverFingerprints": 78,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 9678,
+          "versions": {
+            "01": 10129
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10136,
+              "validMppLogs": 10129,
+              "validMppVolumeRaw": "533408192"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3851,
+          "settled": 3837,
+          "settledDeltaUsdAssumingSixDecimals": 3.272168,
+          "topUp": 2,
+          "closeRequested": 0,
+          "channelClosed": 1,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 158,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3851
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-05T00:00:00.000Z",
+      "end": "2026-08-05T15:00:00.000Z",
+      "fromBlock": 33269584,
+      "toBlockExclusive": 33365982,
+      "mppScan": {
+        "transactions": 15536,
+        "volumeUsd": 671.555325,
+        "uniqueSenders": 3775,
+        "uniqueRecipients": 93
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11328,
+          "validMppLogsAllTokens": 11304,
+          "validMppLogicalPaymentsAllTokens": 11304,
+          "strictLogs": 11304,
+          "strictLogicalPayments": 11304,
+          "strictTransactionHashes": 11304,
+          "strictVolumeUsd": 667.253704,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 667.253704,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 24,
+          "payerAddresses": 3571,
+          "recipientAddresses": 313,
+          "serverFingerprints": 92,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 10920,
+          "versions": {
+            "01": 11304
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11321,
+              "validMppLogs": 11304,
+              "validMppVolumeRaw": "667253704"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 7,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3858,
+          "settled": 4201,
+          "settledDeltaUsdAssumingSixDecimals": 3.401266,
+          "topUp": 120,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 388,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3858
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-05T15:00:00.000Z",
+      "end": "2026-08-06T06:00:00.000Z",
+      "fromBlock": 33365982,
+      "toBlockExclusive": 33462283,
+      "mppScan": {
+        "transactions": 13381,
+        "volumeUsd": 651.550969,
+        "uniqueSenders": 3327,
+        "uniqueRecipients": 79
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 9240,
+          "validMppLogsAllTokens": 9227,
+          "validMppLogicalPaymentsAllTokens": 9227,
+          "strictLogs": 9227,
+          "strictLogicalPayments": 9227,
+          "strictTransactionHashes": 9227,
+          "strictVolumeUsd": 648.266167,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 648.266167,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 13,
+          "payerAddresses": 3109,
+          "recipientAddresses": 249,
+          "serverFingerprints": 78,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 9112,
+          "versions": {
+            "01": 9227
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 9237,
+              "validMppLogs": 9227,
+              "validMppVolumeRaw": "648266167"
+            },
+            "0x20c00000000000000000000058d0b8b2cfdb358c": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3834,
+          "settled": 4154,
+          "settledDeltaUsdAssumingSixDecimals": 3.284802,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 339,
+          "payeeAddresses": 4,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3834
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-06T06:00:00.000Z",
+      "end": "2026-08-06T21:00:00.000Z",
+      "fromBlock": 33462283,
+      "toBlockExclusive": 33558536,
+      "mppScan": {
+        "transactions": 15491,
+        "volumeUsd": 1026.1673449999998,
+        "uniqueSenders": 3982,
+        "uniqueRecipients": 104
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11672,
+          "validMppLogsAllTokens": 11649,
+          "validMppLogicalPaymentsAllTokens": 11649,
+          "strictLogs": 11649,
+          "strictLogicalPayments": 11649,
+          "strictTransactionHashes": 11649,
+          "strictVolumeUsd": 1022.886144,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1022.886144,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 23,
+          "payerAddresses": 3832,
+          "recipientAddresses": 407,
+          "serverFingerprints": 102,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 11257,
+          "versions": {
+            "01": 11649
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11666,
+              "validMppLogs": 11649,
+              "validMppVolumeRaw": "1022886144"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c000000000000000000000111111111e910f0f": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c00000000000000000000058d0b8b2cfdb358c": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3840,
+          "settled": 3842,
+          "settledDeltaUsdAssumingSixDecimals": 3.281201,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 155,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3840
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-06T21:00:00.000Z",
+      "end": "2026-08-07T12:00:00.000Z",
+      "fromBlock": 33558536,
+      "toBlockExclusive": 33654849,
+      "mppScan": {
+        "transactions": 14128,
+        "volumeUsd": 783.2084239999996,
+        "uniqueSenders": 3109,
+        "uniqueRecipients": 96
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10359,
+          "validMppLogsAllTokens": 10332,
+          "validMppLogicalPaymentsAllTokens": 10332,
+          "strictLogs": 10332,
+          "strictLogicalPayments": 10332,
+          "strictTransactionHashes": 10332,
+          "strictVolumeUsd": 779.944324,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 779.944324,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 27,
+          "payerAddresses": 2960,
+          "recipientAddresses": 548,
+          "serverFingerprints": 94,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 10235,
+          "versions": {
+            "01": 10332
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10355,
+              "validMppLogs": 10332,
+              "validMppVolumeRaw": "779944324"
+            },
+            "0x20c00000000000000000000058d0b8b2cfdb358c": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 3,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3797,
+          "settled": 3796,
+          "settledDeltaUsdAssumingSixDecimals": 3.2641,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 152,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3797
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-07T12:00:00.000Z",
+      "end": "2026-08-08T03:00:00.000Z",
+      "fromBlock": 33654849,
+      "toBlockExclusive": 33751047,
+      "mppScan": {
+        "transactions": 14613,
+        "volumeUsd": 485.6042519999997,
+        "uniqueSenders": 3604,
+        "uniqueRecipients": 113
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 11494,
+          "validMppLogsAllTokens": 10812,
+          "validMppLogicalPaymentsAllTokens": 10812,
+          "strictLogs": 10812,
+          "strictLogicalPayments": 10812,
+          "strictTransactionHashes": 10812,
+          "strictVolumeUsd": 476.488428,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 476.488428,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 682,
+          "payerAddresses": 3453,
+          "recipientAddresses": 208,
+          "serverFingerprints": 110,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 10479,
+          "versions": {
+            "01": 10812
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 11479,
+              "validMppLogs": 10798,
+              "validMppVolumeRaw": "476471428"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 14,
+              "validMppLogs": 14,
+              "validMppVolumeRaw": "17000"
+            },
+            "0x20c00000000000000000000014f22ca97301eb73": {
+              "allLogs": 1,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3797,
+          "settled": 3797,
+          "settledDeltaUsdAssumingSixDecimals": 5.845824,
+          "topUp": 0,
+          "closeRequested": 5,
+          "channelClosed": 4,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 153,
+          "payeeAddresses": 3,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3797
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-08T03:00:00.000Z",
+      "end": "2026-08-08T18:00:00.000Z",
+      "fromBlock": 33751047,
+      "toBlockExclusive": 33847311,
+      "mppScan": {
+        "transactions": 14030,
+        "volumeUsd": 763.85292,
+        "uniqueSenders": 3340,
+        "uniqueRecipients": 99
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 10383,
+          "validMppLogsAllTokens": 10273,
+          "validMppLogicalPaymentsAllTokens": 10273,
+          "strictLogs": 10273,
+          "strictLogicalPayments": 10273,
+          "strictTransactionHashes": 10273,
+          "strictVolumeUsd": 754.48552,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 754.48552,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 110,
+          "payerAddresses": 3193,
+          "recipientAddresses": 261,
+          "serverFingerprints": 98,
+          "nonAnonymousClientFingerprints": 3,
+          "anonymousClientLogs": 9916,
+          "versions": {
+            "01": 10273
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 10381,
+              "validMppLogs": 10273,
+              "validMppVolumeRaw": "754485520"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3742,
+          "settled": 3754,
+          "settledDeltaUsdAssumingSixDecimals": 4.2274,
+          "topUp": 0,
+          "closeRequested": 2,
+          "channelClosed": 3,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 151,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3742
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-08T18:00:00.000Z",
+      "end": "2026-08-09T09:00:00.000Z",
+      "fromBlock": 33847311,
+      "toBlockExclusive": 33943577,
+      "mppScan": {
+        "transactions": 16568,
+        "volumeUsd": 1292.1440560000008,
+        "uniqueSenders": 4183,
+        "uniqueRecipients": 75
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 12886,
+          "validMppLogsAllTokens": 12877,
+          "validMppLogicalPaymentsAllTokens": 12877,
+          "strictLogs": 12877,
+          "strictLogicalPayments": 12877,
+          "strictTransactionHashes": 12877,
+          "strictVolumeUsd": 1289.029856,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 1289.029856,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 9,
+          "payerAddresses": 4039,
+          "recipientAddresses": 407,
+          "serverFingerprints": 75,
+          "nonAnonymousClientFingerprints": 4,
+          "anonymousClientLogs": 12732,
+          "versions": {
+            "01": 12877
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 12884,
+              "validMppLogs": 12877,
+              "validMppVolumeRaw": "1289029856"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 0,
+              "validMppVolumeRaw": "0"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3688,
+          "settled": 3691,
+          "settledDeltaUsdAssumingSixDecimals": 3.1142,
+          "topUp": 1,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 152,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3688
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-09T09:00:00.000Z",
+      "end": "2026-08-10T00:00:00.000Z",
+      "fromBlock": 33943577,
+      "toBlockExclusive": 34039884,
+      "mppScan": {
+        "transactions": 26247,
+        "volumeUsd": 7810.565443000002,
+        "uniqueSenders": 7075,
+        "uniqueRecipients": 83
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 22800,
+          "validMppLogsAllTokens": 22639,
+          "validMppLogicalPaymentsAllTokens": 22639,
+          "strictLogs": 22639,
+          "strictLogicalPayments": 22639,
+          "strictTransactionHashes": 22639,
+          "strictVolumeUsd": 7807.507739,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 7807.507739,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 161,
+          "payerAddresses": 6932,
+          "recipientAddresses": 281,
+          "serverFingerprints": 81,
+          "nonAnonymousClientFingerprints": 6,
+          "anonymousClientLogs": 22179,
+          "versions": {
+            "01": 22639
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 22798,
+              "validMppLogs": 22638,
+              "validMppVolumeRaw": "7806987739"
+            },
+            "0x20c0000000000000000000000000000000000000": {
+              "allLogs": 2,
+              "validMppLogs": 1,
+              "validMppVolumeRaw": "520000"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 3603,
+          "settled": 3608,
+          "settledDeltaUsdAssumingSixDecimals": 3.057704,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 145,
+          "payeeAddresses": 2,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 3603
+          }
+        }
+      }
+    },
+    {
+      "start": "2026-08-10T00:00:00.000Z",
+      "end": "2026-08-10T06:02:59.000Z",
+      "fromBlock": 34039884,
+      "toBlockExclusive": 34078742,
+      "mppScan": {
+        "transactions": 4485,
+        "volumeUsd": 96.50411700000002,
+        "uniqueSenders": 1076,
+        "uniqueRecipients": 64
+      },
+      "direct": {
+        "charges": {
+          "allTransferWithMemoLogs": 3220,
+          "validMppLogsAllTokens": 3218,
+          "validMppLogicalPaymentsAllTokens": 3218,
+          "strictLogs": 3218,
+          "strictLogicalPayments": 3218,
+          "strictTransactionHashes": 3218,
+          "strictVolumeUsd": 98.194999,
+          "validMppVolumeUsdAllTokensAssumingSixDecimals": 98.194999,
+          "mppTagOtherVersionLogs": 0,
+          "nonMppMemoLogs": 2,
+          "payerAddresses": 973,
+          "recipientAddresses": 117,
+          "serverFingerprints": 64,
+          "nonAnonymousClientFingerprints": 2,
+          "anonymousClientLogs": 3174,
+          "versions": {
+            "01": 3218
+          },
+          "tokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": {
+              "allLogs": 3220,
+              "validMppLogs": 3218,
+              "validMppVolumeRaw": "98194999"
+            }
+          }
+        },
+        "sessions": {
+          "channelOpened": 1409,
+          "settled": 1409,
+          "settledDeltaUsdAssumingSixDecimals": 1.2128,
+          "topUp": 0,
+          "closeRequested": 0,
+          "channelClosed": 0,
+          "closeRequestCancelled": 0,
+          "otherLogs": 0,
+          "payerAddresses": 142,
+          "payeeAddresses": 1,
+          "openedTokens": {
+            "0x20c000000000000000000000b9537d11c60e8b50": 1409
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Methodology discussion
+    url: https://github.com/NITYAio/agentic-payments-index/discussions
+    about: Debate definitions, coverage, and research questions before proposing a rule.
+  - name: Security report
+    url: https://github.com/NITYAio/agentic-payments-index/security
+    about: Review the security policy before reporting a vulnerability.

@@ -1,6 +1,8 @@
 import { getD1 } from "../../../../db";
 import {
   aggregateIdentityActivity,
+  finalizePrehashedMonthlyActivity,
+  validatePrehashedMonthlyActivity,
   validateNormalizedEvent,
   type EvidenceType,
   type PaymentProtocol,
@@ -15,6 +17,7 @@ type IngestionBody = {
   cursorStart?: unknown;
   cursorEnd?: unknown;
   events?: unknown;
+  activities?: unknown;
 };
 
 type ExistingSegment = {
@@ -72,8 +75,14 @@ export async function GET() {
       endpoint: "/api/internal/identity-ingest",
       method: "POST",
       authentication: "Bearer ingestion secret required",
-      accepts: ["MPP receipts", "x402 settlement responses", "confirmed-chain exports"],
-      privacy: "Raw payer and payee identifiers are SHA-256 hashed before storage.",
+      accepts: [
+        "MPP receipts",
+        "x402 settlement responses",
+        "confirmed-chain exports",
+        "locally hashed monthly identity activity",
+      ],
+      privacy:
+        "Raw payer and payee identifiers are SHA-256 hashed before storage; historical collectors may hash them before upload.",
       retention: "Only monthly identity activity and auditable ingestion segments are retained.",
     },
     { headers: { "Cache-Control": "no-store" } },
@@ -104,33 +113,66 @@ export async function POST(request: Request) {
       ? (body.evidenceType as EvidenceType)
       : null;
     if (!evidenceType) throw new Error("Evidence type is invalid.");
-    if (!Array.isArray(body.events) || body.events.length < 1 || body.events.length > 500) {
-      throw new Error("Each ingestion segment must contain between 1 and 500 events.");
+    const hasEvents = Array.isArray(body.events);
+    const hasActivities = Array.isArray(body.activities);
+    if (hasEvents === hasActivities) {
+      throw new Error("Provide exactly one of events or activities.");
     }
-    const events = body.events.map(validateNormalizedEvent);
-    const eventIds = new Set(events.map((event) => event.id));
-    if (eventIds.size !== events.length) throw new Error("Event ids must be unique within a segment.");
-    if (events.some((event) => event.protocol !== protocol || event.network.toLowerCase() !== network)) {
-      throw new Error("Every event must match the segment protocol and network.");
+    const records = hasEvents ? body.events as unknown[] : body.activities as unknown[];
+    if (records.length < 1 || records.length > 1_000) {
+      throw new Error("Each ingestion segment must contain between 1 and 1,000 records.");
     }
-    const timestamps = events.map((event) => new Date(event.occurredAt).toISOString()).sort();
+    const events = hasEvents ? records.map(validateNormalizedEvent) : [];
+    const activities = hasActivities ? records.map(validatePrehashedMonthlyActivity) : [];
+    if (hasEvents) {
+      const eventIds = new Set(events.map((event) => event.id));
+      if (eventIds.size !== events.length) throw new Error("Event ids must be unique within a segment.");
+      if (events.some((event) => event.protocol !== protocol || event.network.toLowerCase() !== network)) {
+        throw new Error("Every event must match the segment protocol and network.");
+      }
+    } else {
+      const activityKeys = activities.map((activity) =>
+        [activity.role, activity.identityHash, activity.activityMonth, activity.evidenceLevel].join("|"),
+      );
+      if (new Set(activityKeys).size !== activityKeys.length) {
+        throw new Error("Activity identity/month keys must be unique within a segment.");
+      }
+    }
+    const timestamps = (hasEvents
+      ? events.map((event) => new Date(event.occurredAt).toISOString())
+      : activities.flatMap((activity) => [activity.firstSeenAt, activity.lastSeenAt])
+    ).sort();
     const rangeStart = timestamps[0];
     const rangeEnd = timestamps.at(-1)!;
     const segmentId = await sha256(`${sourceKey}|${segmentKey}`);
     const checksum = await sha256(
-      events
-        .map((event) =>
-          [
-            event.id,
-            event.occurredAt,
-            event.payer.scheme,
-            event.payer.key,
-            event.payee.scheme,
-            event.payee.key,
-            event.transactionCount ?? 1,
-            event.volumeUsdMicros ?? 0,
-            event.evidenceLevel,
-          ].join("|"),
+      (hasEvents ? events : activities)
+        .map((record) =>
+          hasEvents
+            ? [
+                "event",
+                "id" in record ? record.id : "",
+                "occurredAt" in record ? record.occurredAt : "",
+                "payer" in record ? record.payer.scheme : "",
+                "payer" in record ? record.payer.key : "",
+                "payee" in record ? record.payee.scheme : "",
+                "payee" in record ? record.payee.key : "",
+                record.transactionCount ?? 1,
+                record.volumeUsdMicros ?? 0,
+                record.evidenceLevel,
+              ].join("|")
+            : [
+                "activity",
+                "role" in record ? record.role : "",
+                "identityScheme" in record ? record.identityScheme : "",
+                "identityHash" in record ? record.identityHash : "",
+                "activityMonth" in record ? record.activityMonth : "",
+                record.transactionCount,
+                record.volumeUsdMicros,
+                "firstSeenAt" in record ? record.firstSeenAt : "",
+                "lastSeenAt" in record ? record.lastSeenAt : "",
+                record.evidenceLevel,
+              ].join("|"),
         )
         .sort()
         .join("\n"),
@@ -188,14 +230,16 @@ export async function POST(request: Request) {
           optionalCursor(body.cursorEnd),
           rangeStart,
           rangeEnd,
-          events.length,
+          records.length,
           checksum,
           importedAt,
         )
         .run();
     }
 
-    const activity = await aggregateIdentityActivity(segmentId, events);
+    const activity = hasEvents
+      ? await aggregateIdentityActivity(segmentId, events)
+      : await finalizePrehashedMonthlyActivity(segmentId, protocol, network, activities);
     for (let index = 0; index < activity.length; index += 75) {
       const statements = activity.slice(index, index + 75).map((row) =>
         d1
@@ -237,7 +281,8 @@ export async function POST(request: Request) {
       {
         segmentId,
         status: "complete",
-        events: events.length,
+        records: records.length,
+        inputMode: hasEvents ? "events" : "prehashed_monthly_activity",
         activityRows: activity.length,
         rangeStart,
         rangeEnd,

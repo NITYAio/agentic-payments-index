@@ -1,0 +1,56 @@
+name: Data source
+description: Propose a public protocol, index, chain, contract, or dataset for coverage.
+title: "[Source]: "
+labels:
+  - data
+  - needs-verification
+body:
+  - type: input
+    id: source
+    attributes:
+      label: Official source
+      placeholder: https://docs.example.org/data
+    validations:
+      required: true
+  - type: dropdown
+    id: unit
+    attributes:
+      label: Unit of observation
+      options:
+        - Successful payment
+        - Settlement
+        - Authorization or mandate
+        - Checkout or order
+        - Agent job or escrow
+        - Service directory record
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: coverage
+    attributes:
+      label: Coverage and retrieval
+      description: State networks, assets, statuses, time range, pagination, freshness, and rate limits.
+    validations:
+      required: true
+  - type: textarea
+    id: legal
+    attributes:
+      label: Licence or access terms
+      description: Link the terms that permit access and explain any redistribution limits.
+    validations:
+      required: true
+  - type: textarea
+    id: overlap
+    attributes:
+      label: Overlap and double-counting risk
+      description: Explain whether these events may already appear in MPP, x402, or another source.
+    validations:
+      required: true
+  - type: checkboxes
+    id: safety
+    attributes:
+      label: Safety and provenance
+      options:
+        - label: This submission contains no secrets or private customer data, and I have the right to share its evidence.
+          required: true

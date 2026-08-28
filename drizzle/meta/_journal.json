@@ -29,6 +29,48 @@
       "when": 1785691796193,
       "tag": "0003_clever_tombstone",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1786247601732,
+      "tag": "0004_flippant_emma_frost",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "6",
+      "when": 1786332948699,
+      "tag": "0005_wild_star_brand",
+      "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "6",
+      "when": 1786374239296,
+      "tag": "0006_rich_reaper",
+      "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "6",
+      "when": 1786473567153,
+      "tag": "0007_light_the_hand",
+      "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "6",
+      "when": 1786855777134,
+      "tag": "0008_wise_midnight",
+      "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "6",
+      "when": 1787082830810,
+      "tag": "0009_serious_captain_america",
+      "breakpoints": true
     }
   ]
 }

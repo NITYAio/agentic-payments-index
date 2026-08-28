@@ -1,0 +1,47 @@
+name: Protocol coverage
+description: Add or correct a protocol in the public coverage map.
+title: "[Coverage]: "
+labels:
+  - coverage
+  - needs-verification
+body:
+  - type: input
+    id: protocol
+    attributes:
+      label: Protocol or network
+    validations:
+      required: true
+  - type: input
+    id: specification
+    attributes:
+      label: Official specification
+      placeholder: https://...
+    validations:
+      required: true
+  - type: dropdown
+    id: role
+    attributes:
+      label: Primary sector role
+      options:
+        - Payment or settlement rail
+        - Authorization or mandate layer
+        - Commerce or checkout standard
+        - Agent job, escrow, or marketplace protocol
+        - Managed payment platform
+        - Other
+    validations:
+      required: true
+  - type: textarea
+    id: disclosure
+    attributes:
+      label: Publicly disclosed activity
+      description: Link any public aggregate, explorer, contract, or downloadable dataset—or state that none exists.
+    validations:
+      required: true
+  - type: textarea
+    id: comparison
+    attributes:
+      label: Comparability with MPP or x402
+      description: Explain what is equivalent and what is not.
+    validations:
+      required: true

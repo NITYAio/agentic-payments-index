@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useEffect, useId, useMemo, useState } from "react";
+import { FormEvent, useEffect, useId, useMemo, useRef, useState } from "react";
 
 type Stats = {
   totalTransactions: number;
@@ -31,11 +31,20 @@ type Service = {
     buyers: number;
     latestTx: string;
   };
+  buyerConcentration?: {
+    topBuyerShare: number;
+    top3BuyerShare: number;
+    top10BuyerShare: number;
+    activeBuyers: number;
+    evidenceStatus: "verified" | "pending";
+  };
 };
 
 type Period = {
   stats: Stats;
   buckets: Bucket[];
+  rangeStart: string | null;
+  rangeEnd: string | null;
 };
 
 type ProtocolKey = "all" | "mpp" | "x402";
@@ -44,6 +53,9 @@ type ProtocolData = {
   source: string;
   live: boolean;
   disclosure: string;
+  measurementLabel: string;
+  volumeLabel: string;
+  volumeComparable: boolean;
   periods: Record<"0" | "1" | "7" | "30", Period>;
   services: Record<"0" | "1" | "7" | "30", Service[]>;
 };
@@ -67,6 +79,39 @@ type DirectoryData = {
   };
   disclosure: string;
   asOf: string;
+};
+
+type TrustBarometerData = {
+  available: boolean;
+  status: "verified" | "partial" | "unavailable";
+  scope?: ProtocolKey | null;
+  coverageStart: string | null;
+  coverageEnd: string | null;
+  reason: string;
+  methodology: string;
+  metrics?: {
+    qualifyingPaymentCount: number;
+    qualifyingVolumeUsd: number;
+    averagePaymentUsd: number;
+    medianPaymentUsd: number | null;
+    maxPaymentUsd: number;
+    excludedZeroCount: number;
+    excludedSelfCount: number;
+    daysSinceTracking: number;
+    thresholds: Array<{
+      amount: number;
+      count: number;
+      delta: number | null;
+      series: Array<{ period: string; count: number }>;
+    }>;
+    series: Array<{
+      date: string;
+      qualifyingPaymentCount: number;
+      averagePaymentUsd: number | null;
+      medianPaymentUsd: number | null;
+      maxPaymentUsd: number | null;
+    }>;
+  } | null;
 };
 
 type SubmissionResult = {
@@ -126,9 +171,16 @@ type Answer = {
 };
 
 const PERIODS = [
-  { days: 1 as const, label: "24h" },
+  { days: 1 as const, label: "24h", disabled: false },
+  { days: 7 as const, label: "7d", disabled: false },
+  { days: 30 as const, label: "30d", disabled: false },
+  { days: 0 as const, label: "History", disabled: false },
+];
+
+const TRUST_PERIODS = [
   { days: 7 as const, label: "7d" },
   { days: 30 as const, label: "30d" },
+  { days: 90 as const, label: "90d" },
   { days: 0 as const, label: "All" },
 ];
 
@@ -139,32 +191,43 @@ const QUESTIONS = [
 ];
 
 const EMPTY_PROTOCOL: ProtocolData = {
-  source: "Waiting for live data",
+  source: "Waiting for direct evidence",
   live: false,
   disclosure: "No placeholder values are shown while live data loads.",
+  measurementLabel: "Direct-source observation",
+  volumeLabel: "Value",
+  volumeComparable: false,
   periods: {
     "0": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
     "1": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
     "7": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
     "30": {
       stats: { totalTransactions: 0, totalVolume: 0, uniqueSenders: 0, uniqueRecipients: 0 },
       buckets: [],
+      rangeStart: null,
+      rangeEnd: null,
     },
   },
   services: { "0": [], "1": [], "7": [], "30": [] },
 };
 
 const FALLBACK: ExplorerData = {
-  source: "Connecting to public indexes",
+  source: "Connecting to direct chain evidence",
   live: false,
   asOf: "",
   protocols: {
@@ -183,6 +246,18 @@ const EMPTY_DIRECTORY: DirectoryData = {
   sourceTotals: { mpp: 0, x402: 0 },
   disclosure: "Connecting to the public service indexes.",
   asOf: "",
+};
+
+const EMPTY_TRUST_BAROMETER: TrustBarometerData = {
+  available: false,
+  status: "unavailable",
+  scope: null,
+  coverageStart: null,
+  coverageEnd: null,
+  reason:
+    "Agent-commerce classification is being validated. No threshold is published until free calls, mints, self-transfers, and speculative flows can be removed reproducibly.",
+  methodology: "/coverage#trust-barometer-method",
+  metrics: null,
 };
 
 const PROTOCOL_LABELS: Record<ProtocolKey, string> = {
@@ -212,6 +287,42 @@ function compactUsd(value: number) {
   return value >= 1000 ? `$${compact(value)}` : usd(value);
 }
 
+function freshnessFor(
+  data: ExplorerData,
+  protocol: ProtocolKey,
+  period: 0 | 1 | 7 | 30,
+) {
+  const key = String(period) as "0" | "1" | "7" | "30";
+  const sources =
+    protocol === "all"
+      ? [
+          { label: "MPP", value: data.protocols.mpp.periods[key].rangeEnd },
+          { label: "x402", value: data.protocols.x402.periods[key].rangeEnd },
+        ]
+      : [{ label: PROTOCOL_LABELS[protocol], value: data.protocols[protocol].periods[key].rangeEnd }];
+  const completed = sources
+    .filter((source): source is { label: string; value: string } => Boolean(source.value))
+    .map((source) => ({ ...source, timestamp: new Date(source.value).getTime() }))
+    .filter((source) => Number.isFinite(source.timestamp));
+  if (!completed.length) {
+    return { label: "Data unavailable", shortLabel: "Unavailable", className: "statusUnavailable", exact: "No completed source window" };
+  }
+  const oldestSource = completed.reduce((oldest, source) => source.timestamp < oldest.timestamp ? source : oldest);
+  const oldest = new Date(oldestSource.timestamp).toISOString();
+  const ageMinutes = Math.max(0, (Date.now() - new Date(oldest).getTime()) / 60_000);
+  const sourcePrefix = protocol === "all" ? `${oldestSource.label} ` : "";
+  const exact = protocol === "all"
+    ? completed.map((source) => `${source.label} updated through ${exactTime(source.value)} UTC`).join(" · ")
+    : `Updated through ${exactTime(oldest)} UTC`;
+  if (ageMinutes <= 90) {
+    return { label: `Live · updated ${relativeTime(oldest)}`, shortLabel: `Live · ${relativeTime(oldest)}`, className: "statusLive", exact };
+  }
+  if (ageMinutes <= 12 * 60) {
+    return { label: `${sourcePrefix}delayed · updated ${relativeTime(oldest)}`, shortLabel: `${sourcePrefix}delayed · ${relativeTime(oldest)}`, className: "statusDelayed", exact };
+  }
+  return { label: `${sourcePrefix}delayed · updated ${relativeTime(oldest)}`, shortLabel: `${sourcePrefix}delayed · ${relativeTime(oldest)}`, className: "statusStale", exact };
+}
+
 function relativeTime(dateString: string) {
   const minutes = Math.max(
     0,
@@ -221,6 +332,52 @@ function relativeTime(dateString: string) {
   if (minutes < 60) return `${minutes}m ago`;
   if (minutes < 1440) return `${Math.floor(minutes / 60)}h ago`;
   return `${Math.floor(minutes / 1440)}d ago`;
+}
+
+function exactTime(dateString: string) {
+  return new Intl.DateTimeFormat("en-US", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "UTC",
+  }).format(new Date(dateString));
+}
+
+function trustChartDate(dateString: string) {
+  const parsed = new Date(`${dateString.slice(0, 10)}T00:00:00Z`);
+  if (!Number.isFinite(parsed.getTime())) return dateString;
+  return new Intl.DateTimeFormat("en-US", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+    timeZone: "UTC",
+  }).format(parsed);
+}
+
+function drawWrappedText(
+  context: CanvasRenderingContext2D,
+  text: string,
+  x: number,
+  y: number,
+  maxWidth: number,
+  lineHeight: number,
+  maxLines: number,
+) {
+  const words = text.split(/\s+/);
+  const lines: string[] = [];
+  let line = "";
+  for (const word of words) {
+    const candidate = line ? `${line} ${word}` : word;
+    if (context.measureText(candidate).width <= maxWidth) {
+      line = candidate;
+      continue;
+    }
+    if (line) lines.push(line);
+    line = word;
+    if (lines.length === maxLines - 1) break;
+  }
+  if (line && lines.length < maxLines) lines.push(line);
+  lines.forEach((item, index) => context.fillText(item, x, y + index * lineHeight));
+  return y + lines.length * lineHeight;
 }
 
 function percentageDelta(value: number, baseline: number) {
@@ -318,7 +475,6 @@ function answerQuestion(
   const text = question.toLowerCase();
   const protocol = protocolForQuestion(text, selectedProtocol);
   const protocolData = data.protocols[protocol];
-  const protocolLabel = PROTOCOL_LABELS[protocol];
   const { primary: days, comparison: comparisonDays } = getTimeframes(text);
   const current =
     protocolData.periods[String(days) as "0" | "1" | "7" | "30"].stats;
@@ -401,7 +557,9 @@ function answerQuestion(
         ? `MPP ${usd(mppValue)} · x402 ${usd(x402Value)}`
         : `MPP ${compact(mppValue)} · x402 ${compact(x402Value)}`,
       explanation:
-        "Both protocols use the same date window. This comparison reflects their respective public indexes and documented coverage.",
+        compareVolume
+          ? "Both protocols use the same exact rolling window. MPP value and terminal-recipient-normalized x402 value are summed at protocol level."
+          : "Both protocols use the same exact rolling window and are reconstructed from direct chain evidence.",
       days,
       metric: compareVolume ? "volume" : "transactions",
       protocol,
@@ -417,7 +575,7 @@ function answerQuestion(
       ? baseline.totalVolume / baseline.totalTransactions
       : null;
     return {
-      eyebrow: `Average payment · ${periodLabel}`,
+      eyebrow: `${protocol === "all" ? "Average observed payment" : protocol === "mpp" ? "Average MPP payment" : "Average x402 payment"} · ${periodLabel}`,
       value: usd(value, true),
       change: benchmark === null ? null : percentageDelta(value, benchmark),
       comparison: comparisonLabel
@@ -425,7 +583,11 @@ function answerQuestion(
         : "aggregate average for the selected period",
       formula: `${usd(current.totalVolume)} ÷ ${compact(current.totalTransactions)} transactions`,
       explanation:
-        `This is observed ${protocolLabel} USD payment volume divided by successful transactions. It measures payment size—not network fees or unrelated token transfers.`,
+        protocol === "all"
+          ? "This divides the combined MPP and x402 value by their combined reconstructed payment count. The same address may appear in both protocols."
+          : protocol === "mpp"
+          ? "This is identified MPP payment value divided by qualifying payments."
+          : "This is payer-originated USDC payment value divided by reconstructed x402 payments. Receive-and-forward chains count once.",
       days,
       metric: "average",
       protocol,
@@ -497,12 +659,12 @@ function answerQuestion(
           )
         : null,
       comparison: comparisonLabel
-        ? `vs recipient identities seen across ${comparisonLabel}`
-        : "recipient identities in the selected period",
-      formula: `${compact(current.uniqueRecipients)} distinct payment recipients`,
+        ? `vs recipient addresses seen across ${comparisonLabel}`
+        : "recipient addresses in the selected period",
+      formula: `${compact(current.uniqueRecipients)} distinct payment recipient addresses`,
       explanation:
         protocol === "all"
-          ? "This is the sum of recipient identities reported by both protocol indexes. It is not a count of resolved services or companies, and a recipient active on both may be counted twice."
+          ? "This is the sum of recipient addresses reported by both protocol indexes. It is not a count of resolved services or companies, and a recipient active on both may be counted twice."
           : "This counts distinct payment recipients with observed activity, not the smaller directory of resolved service origins.",
       days,
       metric: "servers",
@@ -523,7 +685,7 @@ function answerQuestion(
         ? baseline.totalVolume / comparisonDays
         : null;
     return {
-      eyebrow: `Payment volume · ${periodLabel}`,
+      eyebrow: `${protocol === "all" ? "Combined payment value" : protocol === "mpp" ? "MPP payment value" : "x402 payment value"} · ${periodLabel}`,
       value: usd(current.totalVolume),
       change:
         baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
@@ -532,7 +694,11 @@ function answerQuestion(
         : "total observed volume in the selected period",
       formula: `${compact(current.totalTransactions)} payments settled in the period`,
       explanation:
-        `Volume is the total observed USD value of successful ${protocolLabel} payments in the selected period.`,
+        protocol === "all"
+          ? "This sums independently reconstructed MPP value on Tempo and terminal-recipient-normalized x402 value on Base for the same rolling window."
+          : protocol === "mpp"
+          ? "This is identified MPP payment value observed directly on Tempo."
+          : "This is payer-originated USDC value for reconstructed x402 payments involving the maintained facilitator set on Base. Routing chains count once and resolve to the terminal recipient.",
       days,
       metric: "volume",
       protocol,
@@ -546,7 +712,7 @@ function answerQuestion(
       ? baseline.totalTransactions / comparisonDays
       : null;
   return {
-    eyebrow: `Successful transactions · ${periodLabel}`,
+    eyebrow: `Observed records · ${periodLabel}`,
     value: compact(current.totalTransactions),
     change:
       baselineDaily === null ? null : percentageDelta(daily, baselineDaily),
@@ -555,7 +721,7 @@ function answerQuestion(
       : "total successful transactions in the selected period",
     formula: `${compact(Math.round(daily))} transactions per day`,
     explanation:
-      `This counts observed successful ${protocolLabel} payments across indexed services.`,
+      `This counts ${protocolData.measurementLabel.toLowerCase()} reconstructed from direct chain evidence.`,
     days,
     metric: "transactions",
     protocol,
@@ -872,6 +1038,298 @@ function paginationWindow(current: number, total: number) {
     .sort((left, right) => left - right);
 }
 
+function BuyerConcentrationDisclosure({
+  concentration,
+}: {
+  concentration: NonNullable<Service["buyerConcentration"]>;
+}) {
+  const [open, setOpen] = useState(false);
+  const [position, setPosition] = useState({ left: 16, top: 16 });
+  const triggerRef = useRef<HTMLButtonElement>(null);
+  const disclosureId = useId();
+  const percent = (value: number) => `${(value * 100).toFixed(value * 100 < 10 ? 1 : 0)}%`;
+
+  function placeDisclosure() {
+    const bounds = triggerRef.current?.getBoundingClientRect();
+    if (!bounds) return;
+    const width = 276;
+    setPosition({
+      left: Math.max(12, Math.min(window.innerWidth - width - 12, bounds.right - width)),
+      top: bounds.bottom + 8,
+    });
+  }
+
+  return (
+    <span
+      className={`buyerConcentration ${open ? "open" : ""}`}
+      onPointerEnter={placeDisclosure}
+    >
+      <button
+        ref={triggerRef}
+        type="button"
+        aria-expanded={open}
+        aria-controls={disclosureId}
+        onFocus={placeDisclosure}
+        onClick={() => {
+          placeDisclosure();
+          setOpen((current) => !current);
+        }}
+      >
+        {percent(concentration.top10BuyerShare)}
+        <span aria-hidden="true">ⓘ</span>
+      </button>
+      <span
+        className="buyerConcentrationPopover"
+        id={disclosureId}
+        role="tooltip"
+        style={position}
+      >
+        <strong>Buyer concentration</strong>
+        <span><i>Top buyer share</i><b>{percent(concentration.topBuyerShare)}</b></span>
+        <span><i>Top 3 buyer share</i><b>{percent(concentration.top3BuyerShare)}</b></span>
+        <span><i>Top 10 buyer share</i><b>{percent(concentration.top10BuyerShare)}</b></span>
+        <span><i>Total active buyers</i><b>{compact(concentration.activeBuyers)}</b></span>
+      </span>
+    </span>
+  );
+}
+
+function TrustBarometer({
+  data,
+  period,
+  protocol,
+  onPeriodChange,
+}: {
+  data: TrustBarometerData;
+  period: 0 | 7 | 30 | 90;
+  protocol: ProtocolKey;
+  onPeriodChange: (next: 0 | 7 | 30 | 90) => void;
+}) {
+  const [activePointIndex, setActivePointIndex] = useState<number | null>(null);
+  const metrics = data.metrics ?? null;
+  const series = metrics?.series.filter((row) => row.averagePaymentUsd !== null) ?? [];
+  const hasMedianSeries = series.some((row) => row.medianPaymentUsd !== null);
+  const yMax = Math.max(
+    0.01,
+    ...series.flatMap((row) => [row.averagePaymentUsd ?? 0, row.medianPaymentUsd ?? 0]),
+  ) * 1.12;
+  const chartPoints = (key: "averagePaymentUsd" | "medianPaymentUsd") =>
+    series
+      .map((row, index) => {
+        const value = row[key];
+        if (value === null) return null;
+        const x = series.length < 2 ? 500 : 54 + (index / (series.length - 1)) * 892;
+        const y = 224 - (value / yMax) * 176;
+        return `${x.toFixed(1)},${y.toFixed(1)}`;
+      })
+      .filter((point): point is string => Boolean(point))
+      .join(" ");
+  const largestIndex = series.reduce(
+    (best, row, index) => (row.maxPaymentUsd ?? 0) > (series[best]?.maxPaymentUsd ?? 0) ? index : best,
+    0,
+  );
+  const largest = series[largestIndex];
+  const largestX = series.length < 2 ? 500 : 54 + (largestIndex / Math.max(1, series.length - 1)) * 892;
+  const pointX = (index: number) =>
+    series.length < 2 ? 500 : 54 + (index / Math.max(1, series.length - 1)) * 892;
+  const pointY = (value: number | null) => 224 - ((value ?? 0) / yMax) * 176;
+  const activeRow = activePointIndex === null ? null : series[activePointIndex] ?? null;
+  const activeX = activePointIndex === null ? 54 : pointX(activePointIndex);
+  const activeAverageY = pointY(activeRow?.averagePaymentUsd ?? null);
+  const activeMedianY = pointY(activeRow?.medianPaymentUsd ?? null);
+  const tooltipX = activeX > 720 ? activeX - 205 : activeX + 14;
+  const tooltipY = Math.min(
+    156,
+    Math.max(52, Math.min(activeAverageY, activeMedianY) - 72),
+  );
+
+  return (
+    <section className="trustBarometer" id="trust-barometer">
+      <div className="trustPrimary">
+        <div className="trustHeader">
+          <span className="sectionNumber">Trust Barometer</span>
+          <h2>Volume measures activity. <em>Ticket size measures trust.</em></h2>
+          <div className="trustHeaderAside">
+            <div className="periodControl trustPeriod" aria-label="Trust Barometer time period">
+              {TRUST_PERIODS.map((item) => (
+                <button
+                  key={item.days}
+                  className={period === item.days ? "active" : ""}
+                  onClick={() => onPeriodChange(item.days)}
+                  aria-pressed={period === item.days}
+                >
+                  {item.label}
+                </button>
+              ))}
+            </div>
+            <p>
+              Free-tier and zero-value calls excluded. Computed from protocol-attributed
+              commerce observations only—mints and self-payments removed, with terminal
+              x402 recipients normalized.{" "}
+              <a href={data.methodology}>See methodology ↗</a>
+            </p>
+          </div>
+        </div>
+
+        <article className="trustHeroChart" aria-label="Average and median qualifying payment size">
+        <div className="trustChartHead">
+          <div>
+            <InfoTerm
+              label="Average agent ticket size"
+              definition="A proxy for the amount of economic trust expressed by qualifying machine-native commerce payments. It does not prove an autonomous agent made every payment."
+              formula="Qualifying payment value ÷ qualifying payments, after excluded activity is removed."
+              example="A routed payment is counted once at its terminal-recipient amount."
+            />
+            <strong>
+              {metrics
+                ? metrics.medianPaymentUsd === null
+                  ? `${usd(metrics.averagePaymentUsd, true)} average · median shown by protocol`
+                  : `${usd(metrics.averagePaymentUsd, true)} average · ${usd(metrics.medianPaymentUsd, true)} median`
+                : "Awaiting verified classification"}
+            </strong>
+          </div>
+          <span className={data.available ? "trustVerified" : "trustEvidenceGate"}>
+            {data.available ? "Verified" : "Evidence gate"}
+          </span>
+        </div>
+        {metrics ? (
+          <div className="trustLiveChart">
+            <div className="trustLegend">
+              <span><i className="average" /> Average</span>
+              {hasMedianSeries ? <span><i className="median" /> Median</span> : null}
+              <span>{compact(metrics.qualifyingPaymentCount)} qualifying payments</span>
+            </div>
+            <svg
+              viewBox="0 0 1000 260"
+              role="img"
+              tabIndex={0}
+              aria-label={`Interactive average and median ticket-size chart over ${period === 0 ? "all verified history" : `${period} days`}. Click or move across the chart to inspect a date.`}
+              onPointerMove={(event) => {
+                if (!series.length) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const viewBoxX = ((event.clientX - bounds.left) / bounds.width) * 1000;
+                const index = Math.round(((viewBoxX - 54) / 892) * Math.max(1, series.length - 1));
+                setActivePointIndex(Math.max(0, Math.min(series.length - 1, index)));
+              }}
+              onClick={(event) => {
+                if (!series.length) return;
+                const bounds = event.currentTarget.getBoundingClientRect();
+                const viewBoxX = ((event.clientX - bounds.left) / bounds.width) * 1000;
+                const index = Math.round(((viewBoxX - 54) / 892) * Math.max(1, series.length - 1));
+                setActivePointIndex(Math.max(0, Math.min(series.length - 1, index)));
+              }}
+              onKeyDown={(event) => {
+                if (!series.length || (event.key !== "ArrowLeft" && event.key !== "ArrowRight")) return;
+                event.preventDefault();
+                setActivePointIndex((current) => {
+                  const start = current ?? series.length - 1;
+                  return Math.max(0, Math.min(series.length - 1, start + (event.key === "ArrowRight" ? 1 : -1)));
+                });
+              }}
+            >
+              <title>Average and median qualifying ticket size. Select any date to inspect its values.</title>
+              <line x1="54" y1="48" x2="946" y2="48" />
+              <line x1="54" y1="136" x2="946" y2="136" />
+              <line x1="54" y1="224" x2="946" y2="224" />
+              <text className="trustAxisLabel" x="47" y="52" textAnchor="end">{usd(yMax, true)}</text>
+              <text className="trustAxisLabel" x="47" y="140" textAnchor="end">{usd(yMax / 2, true)}</text>
+              <text className="trustAxisLabel" x="47" y="228" textAnchor="end">$0</text>
+              <polyline className="trustAverageLine" points={chartPoints("averagePaymentUsd")} />
+              {hasMedianSeries ? <polyline className="trustMedianLine" points={chartPoints("medianPaymentUsd")} /> : null}
+              {activeRow ? (
+                <g className="trustInspection">
+                  <line x1={activeX} y1="42" x2={activeX} y2="224" />
+                  <circle className="average" cx={activeX} cy={activeAverageY} r="5" />
+                  {activeRow.medianPaymentUsd !== null ? <circle className="median" cx={activeX} cy={activeMedianY} r="4" /> : null}
+                  <rect x={tooltipX} y={tooltipY} width="190" height={activeRow.medianPaymentUsd === null ? 48 : 66} rx="9" />
+                  <text className="date" x={tooltipX + 12} y={tooltipY + 18}>{trustChartDate(activeRow.date)}</text>
+                  <text x={tooltipX + 12} y={tooltipY + 38}>Average {usd(activeRow.averagePaymentUsd ?? 0, true)}</text>
+                  {activeRow.medianPaymentUsd !== null ? <text x={tooltipX + 12} y={tooltipY + 56}>Median {usd(activeRow.medianPaymentUsd, true)}</text> : null}
+                </g>
+              ) : null}
+              {largest ? (
+                <g className="trustMaximum">
+                  <line className="trustOutlierRail" x1="54" y1="24" x2="946" y2="24" />
+                  <circle cx={largestX} cy="24" r="5" />
+                  <text x={Math.min(760, largestX + 13)} y="18">
+                    Largest observed {usd(largest.maxPaymentUsd ?? 0, true)} · outlier, not to scale
+                  </text>
+                </g>
+              ) : null}
+              <text x="54" y="252">{series[0]?.date ?? data.coverageStart?.slice(0, 10)}</text>
+              <text x="946" y="252" textAnchor="end">{series.at(-1)?.date ?? data.coverageEnd?.slice(0, 10)}</text>
+            </svg>
+            <p className="trustChartInstruction" aria-live="polite">
+              {activeRow
+                ? activeRow.medianPaymentUsd === null
+                  ? `${trustChartDate(activeRow.date)}: combined average ${usd(activeRow.averagePaymentUsd ?? 0, true)}. Select MPP or x402 for an exact protocol median.`
+                  : `${trustChartDate(activeRow.date)}: average ${usd(activeRow.averagePaymentUsd ?? 0, true)}; median ${usd(activeRow.medianPaymentUsd, true)}.`
+                : "Click or move across the chart to inspect a date and its ticket size."}
+            </p>
+            <p className="trustScopeNote">{data.reason}</p>
+          </div>
+        ) : (
+          <div className="trustAnticipation" role="img" aria-label={`Trust Barometer unavailable for ${PROTOCOL_LABELS[protocol]}. ${data.reason}`}>
+            <div className="trustScale" aria-hidden="true"><span>$10</span><span>$1</span><span>$0</span></div>
+            <div className="trustPlot" aria-hidden="true">
+              <i /><i /><i />
+              <span className="trustPendingLine" />
+            </div>
+            <div className="trustGateCopy">
+              <span>{PROTOCOL_LABELS[protocol]} · {period === 0 ? "all verified history" : `${period} days`}</span>
+              <strong>Not yet measured</strong>
+              <p>{data.reason}</p>
+            </div>
+          </div>
+        )}
+        </article>
+      </div>
+
+      <div className="trustLadder" aria-label="Payment threshold ladder">
+        {(metrics?.thresholds ?? [1, 10, 100, 1_000].map((amount) => ({ amount, count: 0, delta: null, series: [] }))).map((threshold, index) => {
+          const measured = Boolean(metrics);
+          const hasActivity = measured && threshold.count > 0;
+          const visibleCount = hasActivity || threshold.amount <= 10 ? compact(threshold.count) : "—";
+          const thresholdSeries = threshold.series ?? [];
+          const sparkMax = Math.max(1, ...thresholdSeries.map((point) => point.count));
+          const sparkPoints = thresholdSeries
+            .map((point, pointIndex) => {
+              const x = thresholdSeries.length < 2 ? 50 : 4 + (pointIndex / (thresholdSeries.length - 1)) * 92;
+              const y = 28 - (point.count / sparkMax) * 24;
+              return `${x.toFixed(1)},${y.toFixed(1)}`;
+            })
+            .join(" ");
+          const deltaCopy = threshold.delta === null
+            ? "No complete prior period"
+            : threshold.delta === 0
+              ? "No change vs prior period"
+              : `${threshold.delta > 0 ? "↑" : "↓"} ${Math.abs(threshold.delta).toFixed(1)}% vs prior period`;
+          return (
+          <article className={`trustRung ${hasActivity ? "lit" : "unlit"}`} key={threshold.amount}>
+            <div><span>Rung {index + 1}</span><i aria-hidden="true" /></div>
+            <strong>${threshold.amount.toLocaleString()}+</strong>
+            <b>{measured ? visibleCount : "—"}</b>
+            {hasActivity && thresholdSeries.length > 1 ? (
+              <svg className="trustRungSparkline" viewBox="0 0 100 32" aria-hidden="true">
+                <polyline points={sparkPoints} />
+              </svg>
+            ) : <span className="trustDashedBaseline" aria-hidden="true" />}
+            {measured ? <small className="trustDelta">{deltaCopy}</small> : null}
+            <p>
+              {!measured
+                ? "Coverage unavailable. Awaiting first defensible observation."
+                : hasActivity
+                  ? `${compact(threshold.count)} qualifying payments ${period === 0 ? "since tracking began" : "in this period"}.`
+                  : `No qualifying payment above $${threshold.amount.toLocaleString()} ${period === 0 ? "since tracking began" : "in this period"}. 0 — ${metrics.daysSinceTracking} days and counting.`}
+            </p>
+          </article>
+          );
+        })}
+      </div>
+    </section>
+  );
+}
+
 function ViewToggle({
   machineMode,
   onChange,
@@ -905,7 +1363,7 @@ export default function Home() {
   const [protocol, setProtocol] = useState<ProtocolKey>("all");
   const [period, setPeriod] = useState<0 | 1 | 7 | 30>(30);
   const [question, setQuestion] = useState(
-    "Compare MPP and x402 transaction volume over the last 7 days.",
+    "Compare MPP and x402 transaction activity over the last 7 days.",
   );
   const [submittedQuestion, setSubmittedQuestion] = useState(question);
   const [hasAsked, setHasAsked] = useState(false);
@@ -914,9 +1372,19 @@ export default function Home() {
   const [answerError, setAnswerError] = useState("");
   const [answerRevision, setAnswerRevision] = useState(0);
   const [justAnswered, setJustAnswered] = useState(false);
-  const [sort, setSort] = useState<"transactions" | "volume" | "buyers">(
+  const [shareStatus, setShareStatus] = useState("");
+  const [sort, setSort] = useState<"transactions" | "volume" | "buyers" | "latest">(
     "transactions",
   );
+  const [serviceSearch, setServiceSearch] = useState("");
+  const [serviceQuery, setServiceQuery] = useState("");
+  const [serviceSuggestions, setServiceSuggestions] = useState<Service[]>([]);
+  const [suggestionsOpen, setSuggestionsOpen] = useState(false);
+  const [suggestionsLoading, setSuggestionsLoading] = useState(false);
+  const [suggestionIndex, setSuggestionIndex] = useState(-1);
+  const serviceSuggestionListId = useId();
+  const [trustPeriod, setTrustPeriod] = useState<0 | 7 | 30 | 90>(30);
+  const [trustData, setTrustData] = useState<TrustBarometerData>(EMPTY_TRUST_BAROMETER);
   const [directory, setDirectory] =
     useState<DirectoryData>(EMPTY_DIRECTORY);
   const [directoryLoading, setDirectoryLoading] = useState(true);
@@ -960,6 +1428,51 @@ export default function Home() {
 
   useEffect(() => {
     let active = true;
+    const localSnapshot = window.location.hostname === "127.0.0.1" ? "&source=local" : "";
+    fetch(`/api/trust-barometer?days=${trustPeriod}&protocol=${protocol}${localSnapshot}`)
+      .then((response) => {
+        if (!response.ok) throw new Error("Trust data request failed");
+        return response.json();
+      })
+      .then((nextData: TrustBarometerData) => {
+        if (active) setTrustData(nextData);
+      })
+      .catch(() => {
+        if (active) setTrustData(EMPTY_TRUST_BAROMETER);
+      });
+    return () => {
+      active = false;
+    };
+  }, [protocol, trustPeriod]);
+
+  useEffect(() => {
+    const parameters = new URLSearchParams(window.location.search);
+    const sharedQuestion = parameters.get("q")?.trim();
+    if (!sharedQuestion) return;
+    const sharedProtocol = (["all", "mpp", "x402"].includes(parameters.get("protocol") ?? "")
+      ? parameters.get("protocol")
+      : "all") as ProtocolKey;
+    const requestedDays = Number(parameters.get("days"));
+    const sharedPeriod = ([1, 7, 30].includes(requestedDays)
+      ? requestedDays
+      : 30) as 0 | 1 | 7 | 30;
+    let active = true;
+    queueMicrotask(() => {
+      if (!active) return;
+      setQuestion(sharedQuestion);
+      setProtocol(sharedProtocol);
+      setPeriod(sharedPeriod);
+      void runQuestion(sharedQuestion, sharedProtocol, sharedPeriod);
+    });
+    return () => {
+      active = false;
+    };
+    // A shared query should run once on initial navigation, not after every state update.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    let active = true;
     queueMicrotask(() => {
       if (active) {
         setDirectoryLoading(true);
@@ -973,6 +1486,7 @@ export default function Home() {
       pageSize: "20",
       sort,
     });
+    if (serviceQuery.trim()) parameters.set("q", serviceQuery.trim());
     fetch(`/api/services?${parameters.toString()}`)
       .then((response) => {
         if (!response.ok) throw new Error("Directory request failed");
@@ -994,11 +1508,75 @@ export default function Home() {
     return () => {
       active = false;
     };
-  }, [period, protocol, servicePage, sort]);
+  }, [period, protocol, servicePage, serviceQuery, sort]);
+
+  useEffect(() => {
+    const search = serviceSearch.trim();
+    if (search.length < 2 || search === serviceQuery) {
+      queueMicrotask(() => {
+        setServiceSuggestions([]);
+        setSuggestionsLoading(false);
+        setSuggestionIndex(-1);
+      });
+      return;
+    }
+
+    const controller = new AbortController();
+    const timeout = window.setTimeout(() => {
+      setSuggestionsLoading(true);
+      const parameters = new URLSearchParams({
+        protocol,
+        days: String(period),
+        page: "1",
+        pageSize: "8",
+        sort: "transactions",
+        q: search,
+      });
+      fetch(`/api/services?${parameters.toString()}`, { signal: controller.signal })
+        .then((response) => {
+          if (!response.ok) throw new Error("Suggestion request failed");
+          return response.json();
+        })
+        .then((nextDirectory: DirectoryData) => {
+          setServiceSuggestions(nextDirectory.items);
+          setSuggestionsOpen(true);
+          setSuggestionIndex(-1);
+        })
+        .catch((error: unknown) => {
+          if (error instanceof DOMException && error.name === "AbortError") return;
+          setServiceSuggestions([]);
+        })
+        .finally(() => setSuggestionsLoading(false));
+    }, 220);
+
+    return () => {
+      window.clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [period, protocol, serviceQuery, serviceSearch]);
 
   const selectedKey = String(period) as "0" | "1" | "7" | "30";
   const selectedProtocolData = data.protocols[protocol];
   const selected = selectedProtocolData.periods[selectedKey];
+  const allTimeAvailable = Boolean(
+    selectedProtocolData.periods["0"].rangeStart &&
+      selectedProtocolData.periods["0"].rangeEnd,
+  );
+  const x402HistoryAvailable = Boolean(
+    data.protocols.x402.periods["0"].rangeStart &&
+      data.protocols.x402.periods["0"].rangeEnd,
+  );
+  const historyCoverageNotice = loading
+    ? "Loading the latest verified direct-chain snapshot."
+    : x402HistoryAvailable
+      ? "Direct-chain rolling windows and verified MPP + x402 history are live."
+      : "Current rolling windows are live; historical coverage is temporarily unavailable.";
+  const allTimeUnavailableTitle =
+    protocol === "mpp"
+      ? "MPP history is temporarily unavailable"
+      : protocol === "x402"
+        ? "x402 history is temporarily unavailable"
+        : "Combined history is temporarily unavailable";
   const fallbackAnswer = useMemo(
     () => answerQuestion(data, submittedQuestion, protocol),
     [data, submittedQuestion, protocol],
@@ -1028,21 +1606,59 @@ export default function Home() {
     }),
   );
   const selectedPeriodDays = periodDays(period, selected.buckets);
-  const average = selected.stats.totalTransactions
+  const average = selectedProtocolData.volumeComparable && selected.stats.totalTransactions
     ? selected.stats.totalVolume / selected.stats.totalTransactions
     : 0;
   const mppSelected = data.protocols.mpp.periods[selectedKey].stats;
   const x402Selected = data.protocols.x402.periods[selectedKey].stats;
   const combinedTransactions =
     mppSelected.totalTransactions + x402Selected.totalTransactions;
-  const combinedVolume = mppSelected.totalVolume + x402Selected.totalVolume;
+  const freshness = freshnessFor(data, protocol, period);
+  const concentrationAvailable = directory.items.some(
+    (service) => service.buyerConcentration?.evidenceStatus === "verified",
+  );
 
-  async function runQuestion(nextQuestion: string) {
+  function searchServices(event: FormEvent) {
+    event.preventDefault();
+    setServicePage(1);
+    setServiceQuery(serviceSearch.trim());
+    setSuggestionsOpen(false);
+    setSuggestionIndex(-1);
+  }
+
+  function selectServiceSuggestion(service: Service) {
+    setServiceSearch(service.name);
+    setServiceQuery(service.name);
+    setServicePage(1);
+    setSuggestionsOpen(false);
+    setSuggestionIndex(-1);
+  }
+
+  function protocolHasAllTime(nextProtocol: ProtocolKey) {
+    const nextPeriod = data.protocols[nextProtocol].periods["0"];
+    return Boolean(nextPeriod.rangeStart && nextPeriod.rangeEnd);
+  }
+
+  function selectProtocol(nextProtocol: ProtocolKey) {
+    setProtocol(nextProtocol);
+    if (period === 0 && !protocolHasAllTime(nextProtocol)) setPeriod(30);
+    setServicePage(1);
+  }
+
+  async function runQuestion(
+    nextQuestion: string,
+    requestedProtocol = protocol,
+    requestedPeriod = period,
+  ) {
     const trimmed = nextQuestion.trim();
     if (!trimmed) return;
     setSubmittedQuestion(trimmed);
-    const nextProtocol = protocolForQuestion(trimmed, protocol);
-    setProtocol(nextProtocol);
+    const nextProtocol = protocolForQuestion(trimmed, requestedProtocol);
+    const nextPeriod =
+      requestedPeriod === 0 && !protocolHasAllTime(nextProtocol)
+        ? 30
+        : requestedPeriod;
+    selectProtocol(nextProtocol);
     setRemoteAnswer(null);
     setAnswerError("");
     setHasAsked(true);
@@ -1054,7 +1670,7 @@ export default function Home() {
         body: JSON.stringify({
           question: trimmed,
           protocol: nextProtocol,
-          windowDays: period,
+          windowDays: nextPeriod,
         }),
       });
       if (!response.ok) throw new Error("Analysis request failed");
@@ -1076,6 +1692,73 @@ export default function Home() {
   function submitQuestion(event: FormEvent) {
     event.preventDefault();
     runQuestion(question);
+  }
+
+  function liveAnswerUrl() {
+    const url = new URL(window.location.origin);
+    url.searchParams.set("q", submittedQuestion);
+    url.searchParams.set("protocol", answer.protocol);
+    url.searchParams.set("days", String(answer.days));
+    url.hash = "ask-index";
+    return url.toString();
+  }
+
+  async function copyAnswerLink() {
+    await navigator.clipboard.writeText(liveAnswerUrl());
+    setShareStatus("Live answer link copied");
+    window.setTimeout(() => setShareStatus(""), 1800);
+  }
+
+  function shareAnswer(destination: "x" | "linkedin") {
+    const url = liveAnswerUrl();
+    const text = `${submittedQuestion} — ${answer.value} | The Agentic Payments Index`;
+    const shareUrl =
+      destination === "x"
+        ? `https://x.com/intent/post?text=${encodeURIComponent(text)}&url=${encodeURIComponent(url)}`
+        : `https://www.linkedin.com/sharing/share-offsite/?url=${encodeURIComponent(url)}`;
+    window.open(shareUrl, "_blank", "noopener,noreferrer,width=760,height=680");
+  }
+
+  function downloadAnswerCard() {
+    const canvas = document.createElement("canvas");
+    canvas.width = 1200;
+    canvas.height = 630;
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    const gradient = context.createLinearGradient(0, 0, 1200, 630);
+    gradient.addColorStop(0, "#120b09");
+    gradient.addColorStop(0.7, "#1b0d09");
+    gradient.addColorStop(1, "#37150c");
+    context.fillStyle = gradient;
+    context.fillRect(0, 0, 1200, 630);
+    context.strokeStyle = "rgba(255,107,61,.5)";
+    context.lineWidth = 2;
+    context.strokeRect(34, 34, 1132, 562);
+    context.fillStyle = "#ff6b3d";
+    context.font = "600 24px ui-monospace, monospace";
+    context.fillText("THE AGENTIC PAYMENTS INDEX", 82, 98);
+    context.fillStyle = "#a99a92";
+    context.font = "28px Arial, sans-serif";
+    const afterQuestion = drawWrappedText(context, submittedQuestion, 82, 180, 1010, 42, 3);
+    context.fillStyle = "#fff7ef";
+    context.font = "500 88px Arial, sans-serif";
+    const safeValue = answer.value.length > 24 ? `${answer.value.slice(0, 24)}…` : answer.value;
+    context.fillText(safeValue, 82, Math.max(355, afterQuestion + 82));
+    context.fillStyle = "#b7aaa2";
+    context.font = "26px Arial, sans-serif";
+    drawWrappedText(context, answer.comparison, 82, 475, 1010, 34, 2);
+    context.fillStyle = "#b8ed72";
+    context.font = "600 18px ui-monospace, monospace";
+    context.fillText("VERIFIED CALCULATION", 82, 557);
+    context.fillStyle = "#877870";
+    context.textAlign = "right";
+    context.fillText("agenticpaymentsindex.org", 1118, 557);
+    const link = document.createElement("a");
+    link.download = `agentic-payments-index-${Date.now()}.png`;
+    link.href = canvas.toDataURL("image/png");
+    link.click();
+    setShareStatus("Insight card created");
+    window.setTimeout(() => setShareStatus(""), 1800);
   }
 
   async function submitService(event: FormEvent) {
@@ -1121,7 +1804,7 @@ export default function Home() {
   if (machineMode) {
     const machinePayload = {
       index: "the-agentic-payments-index",
-      schemaVersion: "0.3.0",
+      schemaVersion: "0.4.0",
       asOf: data.asOf || null,
       selectedView: {
         protocol,
@@ -1131,7 +1814,7 @@ export default function Home() {
       coverage: {
         indexedServiceRecords: directory.total,
         activePayerAddresses: selected.stats.uniqueSenders,
-        activeServerIdentities: selected.stats.uniqueRecipients,
+        activeRecipientAddresses: selected.stats.uniqueRecipients,
         mppIndexedOrigins: directory.sourceTotals.mpp,
         x402IndexedOrigins: directory.sourceTotals.x402,
         caveat: directory.disclosure,
@@ -1145,10 +1828,11 @@ export default function Home() {
       endpoints: {
         network: "/api/network",
         directory:
-          `/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}`,
+          `/api/services?protocol=${protocol}&days=${period}&page=1&pageSize=20&sort=${sort}${serviceQuery ? `&q=${encodeURIComponent(serviceQuery)}` : ""}`,
         manifest: "/api/agent",
         ask: "/api/ask",
         walletRegistry: "/api/wallets",
+        trustBarometer: `/api/trust-barometer?protocol=${protocol}&days=${trustPeriod}`,
         submitService: "/api/submissions",
       },
     };
@@ -1157,10 +1841,7 @@ export default function Home() {
       <main className="machineShell">
         <aside className="publicBetaBar" aria-label="Public beta notice">
           <strong>Public beta</strong>
-          <span>
-            Aggregate analytics are live. Identity history and cohort coverage
-            are being backfilled.
-          </span>
+          <span>{historyCoverageNotice}</span>
           <a href="#machine-evidence">Coverage details ↓</a>
         </aside>
         <nav className="machineTopbar">
@@ -1186,6 +1867,27 @@ export default function Home() {
               stable fields, declared sources, visible freshness, and coverage
               limits that travel with the number.
             </p>
+            <div className="machineControls" aria-label="API snapshot controls">
+              <div className="protocolTabs">
+                {(["all", "mpp", "x402"] as ProtocolKey[]).map((item) => (
+                  <button key={item} className={protocol === item ? "active" : ""} onClick={() => selectProtocol(item)}>
+                    {item === "all" ? "All" : item.toUpperCase()}
+                  </button>
+                ))}
+              </div>
+              <div className="periodControl">
+                {PERIODS.map((item) => (
+                  <button
+                    key={item.days}
+                    className={period === item.days ? "active" : ""}
+                    disabled={item.days === 0 && !allTimeAvailable}
+                    onClick={() => setPeriod(item.days)}
+                  >
+                    {item.label}
+                  </button>
+                ))}
+              </div>
+            </div>
             <div className="machineEndpointList">
               <a href="/api/network" target="_blank">
                 GET /api/network <span>↗</span>
@@ -1212,10 +1914,14 @@ export default function Home() {
           </div>
           <div className="machineConsole">
             <div className="machineConsoleHead">
-              <span>index.snapshot.json</span>
+              <span>GET /api/network · {protocol} · {period === 0 ? "history" : period === 1 ? "24h" : `${period}d`}</span>
               <span className={data.live ? "machineHealthy" : ""}>
                 {data.live ? "200 OK" : "503 SOURCE UNAVAILABLE"}
               </span>
+            </div>
+            <div className="machineConsoleActions">
+              <button onClick={() => void navigator.clipboard.writeText(JSON.stringify(machinePayload, null, 2))}>Copy JSON</button>
+              <a href="/api/network" target="_blank">Open endpoint ↗</a>
             </div>
             <pre>{JSON.stringify(machinePayload, null, 2)}</pre>
           </div>
@@ -1234,7 +1940,7 @@ export default function Home() {
           <article>
             <span>03 / Qualify</span>
             <strong>Adjustment state</strong>
-            <p>Unadjusted metrics are labelled until confidence rules ship.</p>
+            <p>Raw totals stay explicit until adjustment rules and confidence ranges ship.</p>
           </article>
           <article>
             <span>04 / Cite</span>
@@ -1255,11 +1961,8 @@ export default function Home() {
     <main>
       <aside className="publicBetaBar" aria-label="Public beta notice">
         <strong>Public beta</strong>
-        <span>
-          Aggregate analytics are live. Identity history and cohort coverage are
-          being backfilled.
-        </span>
-        <a href="#evidence">Coverage details ↓</a>
+        <span>{historyCoverageNotice}</span>
+        <a href="/coverage">Coverage details ↗</a>
       </aside>
       <nav className="topbar" aria-label="Primary navigation">
         <a
@@ -1271,30 +1974,22 @@ export default function Home() {
             <i />
             <i />
           </span>
-          <span className="brandCopy">
-            <span>THE AGENTIC PAYMENTS INDEX</span>
-            <small>Observed MPP + x402 activity</small>
+            <span className="brandCopy">
+              <span>THE AGENTIC PAYMENTS INDEX</span>
+              <small>MPP on Tempo · x402 on Base</small>
           </span>
         </a>
         <div className="navLinks">
           <a href="#pulse">Network</a>
           <a href="#services">Services</a>
-          <a href="#identity">Identity</a>
-          <a href="#evidence">Evidence</a>
+          <a href="/coverage">Coverage</a>
+          <a href="/about">About</a>
           <a href="#methodology">Methodology</a>
-          <button className="navSubmit" onClick={() => setSubmissionOpen(true)}>
-            Submit a service
-          </button>
         </div>
-        <div className="status">
-          <span
-            className={selectedProtocolData.live ? "liveDot" : "previewDot"}
-          />
-          {loading
-            ? "Connecting"
-            : selectedProtocolData.live
-              ? "Live indexes"
-              : "Data unavailable"}
+        <div className={`status ${freshness.className}`} title={freshness.exact}>
+          <span className={loading ? "previewDot" : "liveDot"} />
+          <span className="statusLong">{loading ? "Connecting" : freshness.label}</span>
+          <span className="statusShort">{loading ? "Connecting" : freshness.shortLabel}</span>
         </div>
       </nav>
 
@@ -1304,22 +1999,22 @@ export default function Home() {
             <button
               key={item}
               className={protocol === item ? "active" : ""}
-              onClick={() => {
-                setProtocol(item);
-                setServicePage(1);
-              }}
+              onClick={() => selectProtocol(item)}
               aria-pressed={protocol === item}
             >
               {item === "all" ? "All protocols" : item.toUpperCase()}
             </button>
           ))}
         </div>
+        <button className="protocolSubmit" onClick={() => setSubmissionOpen(true)}>
+          Submit a service
+        </button>
       </div>
 
       <section className="hero" id="top">
         <div className="heroCopy">
           <div className="kicker">
-            <span>Stablecoin payments intelligence</span>
+            <span>Machine-native payments intelligence</span>
             <i />
             <span>{PROTOCOL_LABELS[protocol]}</span>
           </div>
@@ -1327,7 +2022,7 @@ export default function Home() {
             <span>The machine economy,</span>
             <em>made legible.</em>
           </h1>
-          <div className="askDock heroAsk">
+          <div className="askDock heroAsk" id="ask-index">
             <div className="askDockLabel">
               <span className="spark">✦</span>
               <span>Ask the Index</span>
@@ -1406,14 +2101,18 @@ export default function Home() {
                     days={answer.days}
                     yAxisTitle={
                       answer.metric === "volume"
-                        ? "USD volume per bucket"
+                        ? answer.protocol === "x402"
+                          ? "x402 payment value per bucket"
+                          : "MPP payment value per bucket"
                         : answer.metric === "average"
-                          ? "Average USD payment per bucket"
+                          ? answer.protocol === "x402"
+                            ? "Average x402 payment per bucket"
+                            : "Average MPP payment per bucket"
                           : answer.metric === "buyers"
                             ? "Active payer addresses per bucket"
                             : answer.metric === "servers"
-                              ? "Active server identities per bucket"
-                              : "Successful transactions per bucket"
+                              ? "Active recipient addresses per bucket"
+                              : "Observed records per bucket"
                     }
                     series={answerSeries}
                   />
@@ -1428,8 +2127,18 @@ export default function Home() {
                     Source: {answer.source}
                     {answer.cohort?.completeThrough
                       ? ` · verified identity coverage through ${answer.cohort.completeThrough}.`
-                      : " · calculated from the latest loaded index snapshot."}
+                      : " · calculated from the latest direct-evidence snapshot."}
                   </p>
+                )}
+                {!answer.limited && (
+                  <div className="answerShare" aria-label="Share this answer">
+                    <span>Share this insight</span>
+                    <button type="button" onClick={copyAnswerLink}>Copy live link</button>
+                    <button type="button" onClick={() => shareAnswer("x")}>X</button>
+                    <button type="button" onClick={() => shareAnswer("linkedin")}>LinkedIn</button>
+                    <button type="button" onClick={downloadAnswerCard}>Download card</button>
+                    {shareStatus && <small role="status">{shareStatus}</small>}
+                  </div>
                 )}
                 {answerError && <p className="answerError">{answerError}</p>}
               </div>
@@ -1448,7 +2157,10 @@ export default function Home() {
                 <button
                   key={item.days}
                   className={period === item.days ? "active" : ""}
+                  disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                  title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                   onClick={() => {
+                    if (item.disabled) return;
                     setPeriod(item.days);
                     setServicePage(1);
                   }}
@@ -1464,9 +2176,9 @@ export default function Home() {
             <article>
               <InfoTerm
                 label="Transactions"
-                definition="Successful protocol-indexed payment events observed during the selected time window."
-                formula="Count of successful payment records."
-                example="A 30-day total of 13.2M means 13.2M successful payment events were indexed."
+                definition={`${selectedProtocolData.measurementLabel} in the exact rolling time window.`}
+                formula="Count of records matching the published protocol-specific direct-source method."
+                example="The combined view adds record counts while preserving the distinct MPP and x402 definitions."
               />
               <strong>
                 {selectedProtocolData.live
@@ -1481,10 +2193,24 @@ export default function Home() {
             </article>
             <article>
               <InfoTerm
-                label="USD volume"
-                definition="The total stablecoin settlement value recorded during the selected window, expressed in US dollars."
-                formula="Sum of the USD value of observed successful payments."
-                example={`${usd(selected.stats.totalVolume)} observed across the selected window.`}
+                label={selectedProtocolData.volumeLabel}
+                definition={
+                  protocol === "all"
+                    ? "The sum of independently reconstructed MPP value on Tempo and terminal-recipient-normalized x402 value on Base for the same selected period."
+                    : protocol === "mpp"
+                      ? "The value of current-version MPP charges and settled sessions observed directly on Tempo."
+                      : "Payer-originated USDC payment value involving the maintained x402 facilitator set on Base. Receive-and-forward chains count once and resolve to the final recipient."
+                }
+                formula={
+                  protocol === "all"
+                    ? "MPP payment value + terminal-recipient-normalized x402 payment value."
+                    : "Sum of the directly observed values in the exact rolling window."
+                }
+                example={
+                  protocol === "all"
+                    ? `MPP ${usd(mppSelected.totalVolume)} · x402 ${usd(x402Selected.totalVolume)}`
+                    : `${usd(selected.stats.totalVolume)} observed across the selected window.`
+                }
               />
               <strong>
                 {selectedProtocolData.live
@@ -1493,7 +2219,7 @@ export default function Home() {
               </strong>
               <small>
                 {selectedProtocolData.live
-                  ? `${usd(average, true)} average payment`
+                  ? `${usd(average, true)} average per observed record`
                   : "Connecting to index"}
               </small>
             </article>
@@ -1520,24 +2246,24 @@ export default function Home() {
               <small>
                 {selectedProtocolData.live
                   ? protocol === "all"
-                    ? "Protocol-level sum"
+                    ? "May overlap across protocols"
                     : "Distinct payer addresses"
                   : "Connecting to index"}
               </small>
             </article>
             <article>
               <InfoTerm
-                label="Active server identities"
-                definition="Distinct protocol recipient identities that received at least one observed payment in the selected window."
-                formula="Count of distinct source-reported recipient identities with successful payments."
-                example="One service can use several recipient identities, so this is not a count of companies."
+                label="Active recipient addresses"
+                definition="Distinct network-normalized recipient addresses that received at least one observed payment in the selected window."
+                formula="Count of distinct directly observed recipient identifiers in the selected window."
+                example="One service can use several recipient addresses, so this is not a count of servers or companies."
               />
               <strong>
                 {selectedProtocolData.live
                   ? compact(selected.stats.uniqueRecipients)
                   : "—"}
               </strong>
-              <small>{protocol === "all" ? "Protocol-level sum" : "Active recipients"}</small>
+              <small>{protocol === "all" ? "May overlap across protocols" : "Active recipients"}</small>
             </article>
           </div>
 
@@ -1546,11 +2272,11 @@ export default function Home() {
               <div>
                 <InfoTerm
                   label="Protocol activity"
-                  definition="Successful payments observed in each source-native time bucket, shown separately for MPP and x402."
-                  formula="Count of successful transactions per time bucket."
-                  example="Taller bars indicate more payments during that bucket, not higher payment value."
+                  definition="Directly observed protocol-attributed MPP payments and facilitator-associated x402 settlements, shown separately."
+                  formula="Count of qualifying records per time bucket under each protocol's published method."
+                  example="Taller bars indicate more qualifying records during that bucket, not higher dollar value."
                 />
-                <small>{period === 0 ? `Available indexed history since ${coverageStart(selected.buckets)}` : period === 1 ? "Past 24 hours" : `Past ${period} days`} · source-native buckets</small>
+                <small>{period === 0 ? `Verified history since ${coverageStart(selected.buckets)}` : period === 1 ? "Hourly activity · past 24 hours" : `Daily activity · past ${period} days`}</small>
               </div>
               <div className="chartLegend" aria-label="Chart legend">
                 {(protocol === "all" || protocol === "mpp") && <span><i className="legendMpp" />MPP</span>}
@@ -1559,7 +2285,7 @@ export default function Home() {
             </div>
             <LabeledBarChart
               days={period}
-              yAxisTitle="Successful transactions per bucket"
+              yAxisTitle="Observed records per bucket"
               series={(protocol === "all" ? ["mpp", "x402"] : [protocol]).map((item) => ({
                 key: item,
                 label: PROTOCOL_LABELS[item as ProtocolKey],
@@ -1573,6 +2299,14 @@ export default function Home() {
         </aside>
       </section>
 
+      <TrustBarometer
+        key={`${protocol}-${trustPeriod}-${trustData.coverageEnd ?? "pending"}`}
+        data={trustData}
+        period={trustPeriod}
+        protocol={protocol}
+        onPeriodChange={setTrustPeriod}
+      />
+
       <section className="indexDefinition" id="coverage">
         <div className="definitionLead">
           <span className="sectionNumber">What this index measures</span>
@@ -1581,7 +2315,7 @@ export default function Home() {
         <div className="definitionBody">
           <p className="definitionIntro">
             The Agentic Payments Index brings MPP and x402 stablecoin activity into
-            one comparable view. It shows what the payment data proves—and clearly
+            one evidence-led view. It shows what the chain data proves—and clearly
             labels what it cannot prove about the person, application, or agent
             behind a wallet.
           </p>
@@ -1590,9 +2324,9 @@ export default function Home() {
               <span>01 / Observed</span>
               <strong>Protocol activity</strong>
               <p>
-                Transactions, settlement value, payer and recipient identifiers,
-                timestamps, and resolved service origins exposed by the public
-                indexes.
+                Transactions, value, payer and recipient identifiers, and timestamps
+                reconstructed from Tempo and Base. Named service origins remain a
+                separate directory layer.
               </p>
             </article>
             <article>
@@ -1627,7 +2361,10 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
+                disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                 onClick={() => {
+                  if (item.disabled) return;
                   setPeriod(item.days);
                   setServicePage(1);
                 }}
@@ -1643,22 +2380,36 @@ export default function Home() {
             label="Transactions"
             value={compact(selected.stats.totalTransactions)}
             note={`${compact(selected.stats.totalTransactions / selectedPeriodDays)} / day`}
-            definition="Successful protocol-indexed payment events observed during the selected time window."
-            formula="Count of successful payment records."
-            example="A retry is counted only if it appears as a separate successful payment record."
+            definition={`${selectedProtocolData.measurementLabel} in the exact rolling time window.`}
+            formula="Count of records that satisfy the protocol-specific direct-source method."
+            example="MPP and x402 use different attribution rules; the combined view sums their record counts but preserves those definitions."
           />
           <MetricCard
-            label="USD volume"
+            label={selectedProtocolData.volumeLabel}
             value={compactUsd(selected.stats.totalVolume)}
-            note={`${usd(average, true)} avg payment`}
-            definition="The sum of recorded stablecoin settlement values in the selected window, expressed in US dollars."
-            formula="Sum of observed successful payment values."
-            example="A $2 and a $3 payment produce $5 of USD volume."
+            note={`${usd(average, true)} average payment`}
+            definition={
+              protocol === "all"
+                ? "The sum of independently reconstructed MPP payment value and terminal-recipient-normalized x402 payment value for the same rolling window."
+                : protocol === "mpp"
+                  ? "Value of current-version MPP charges and settled sessions observed directly on Tempo."
+                  : "Payer-originated USDC payment value involving the maintained x402 facilitator set on Base; receive-and-forward chains count once."
+            }
+            formula={
+              protocol === "all"
+                ? "MPP payment value + terminal-normalized x402 payment value."
+                : "Sum of directly observed value in the exact rolling window."
+            }
+            example={
+              protocol === "all"
+                ? `${usd(mppSelected.totalVolume)} MPP + ${usd(x402Selected.totalVolume)} x402 = ${usd(selected.stats.totalVolume)}.`
+                : `Observed value: ${usd(selected.stats.totalVolume)}.`
+            }
           />
           <MetricCard
             label="Active payer addresses"
             value={compact(selected.stats.uniqueSenders)}
-            note={protocol === "all" ? "Protocol-level sum" : "Unique senders"}
+            note={protocol === "all" ? "May overlap across protocols" : "Unique senders"}
             definition={
               protocol === "all"
                 ? "The sum of distinct payer addresses reported by MPP and x402. Cross-protocol identity is not deduplicated."
@@ -1672,15 +2423,15 @@ export default function Home() {
             example="One actor using two wallets can appear twice; several actors can also share one wallet."
           />
           <MetricCard
-            label="Active server identities"
+            label="Active recipient addresses"
             value={compact(selected.stats.uniqueRecipients)}
             note={
               protocol === "all"
-                ? "Protocol-level sum; not companies"
+                ? "May overlap across protocols"
                 : "Distinct active recipients"
             }
-            definition="Distinct protocol recipient identities that received at least one observed payment in the selected window. These are not necessarily distinct companies or services."
-            formula="Distinct active recipient identities reported by the selected protocol indexes."
+            definition="Distinct network-normalized recipient addresses that received at least one observed payment in the selected window. These are not servers, companies, or necessarily distinct services."
+            formula="Distinct active recipient addresses reported by the selected protocol indexes."
             example="Several wallet addresses may belong to the same underlying service."
           />
         </div>
@@ -1691,9 +2442,9 @@ export default function Home() {
               <div>
                 <InfoTerm
                   label="Protocol share"
-                  definition="Each protocol's portion of the combined observed total for the same metric and time window."
-                  formula="Protocol value ÷ combined MPP and x402 value × 100."
-                  example="If MPP has 40 transactions and x402 has 60, their shares are 40% and 60%."
+                  definition="Each protocol's portion of combined observed record counts for the same rolling time window."
+                  formula="Protocol record count ÷ combined MPP and x402 record count × 100."
+                  example="If MPP has 40 qualifying records and x402 has 60, their activity shares are 40% and 60%."
                 />
                 <strong>MPP vs x402</strong>
               </div>
@@ -1721,26 +2472,15 @@ export default function Home() {
                   {compact(x402Selected.totalTransactions)}
                 </b>
               </div>
-              <div className="shareRow">
-                <span>USD volume</span>
-                <div className="shareTrack" aria-hidden="true">
-                  <i
-                    className="shareMpp"
-                    style={{
-                      width: `${combinedVolume ? (mppSelected.totalVolume / combinedVolume) * 100 : 0}%`,
-                    }}
-                  />
-                  <i
-                    className="shareX402"
-                    style={{
-                      width: `${combinedVolume ? (x402Selected.totalVolume / combinedVolume) * 100 : 0}%`,
-                    }}
-                  />
+              <div className="shareRow valueSeparationRow">
+                <span>Payment value</span>
+                <div className="separateValues" aria-label="Protocol value measurements shown separately">
+                  <i className="legendMpp" />
+                  <b>MPP payment value {usd(mppSelected.totalVolume)}</b>
+                  <i className="legendX402" />
+                  <b>x402 payment value {usd(x402Selected.totalVolume)}</b>
                 </div>
-                <b>
-                  MPP {usd(mppSelected.totalVolume)} · x402{" "}
-                  {usd(x402Selected.totalVolume)}
-                </b>
+                <small>Combined {usd(selected.stats.totalVolume)}</small>
               </div>
             </div>
           </div>
@@ -1751,9 +2491,9 @@ export default function Home() {
             <div className="panelHeading">
               <div>
                 <InfoTerm
-                  label="Transaction velocity"
-                  definition="The average number of successful transactions observed per day in the selected time window."
-                  formula="Total successful transactions ÷ number of days."
+                  label="Average daily transactions"
+                  definition="The average number of qualifying direct-source records observed per day in the selected time window."
+                  formula="Total observed records ÷ number of days."
                   example={`${compact(selected.stats.totalTransactions)} ÷ ${Math.round(selectedPeriodDays)} days = ${compact(Math.round(selected.stats.totalTransactions / selectedPeriodDays))} transactions per day.`}
                 />
                 <strong>
@@ -1762,18 +2502,13 @@ export default function Home() {
                 </strong>
               </div>
               <div className="legend">
-                <span>
-                  <i className="legendMint" /> Transactions
-                </span>
-                <span>
-                  <i className="legendWhite" /> Relative activity
-                </span>
+                <span><i className="legendMint" /> Transactions</span>
               </div>
             </div>
             <LabeledBarChart
               className="activityChart"
               days={period}
-              yAxisTitle="Successful transactions per bucket"
+              yAxisTitle="Observed records per bucket"
               series={[
                 {
                   key: protocol,
@@ -1792,32 +2527,37 @@ export default function Home() {
           </article>
 
           <article className="signalPanel">
-            <span className="signalLabel">
-              Signal /{" "}
-              <InfoTerm
-                label="average payment size"
-                definition="The mean USD value of successful observed payments in the selected window."
-                formula="Total USD volume ÷ successful transactions."
-                example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per payment.`}
-              />
-            </span>
-            <strong>{usd(average, true)}</strong>
-            <p>Average observed payment in this period.</p>
-            <div className="signalRule" />
-            <dl>
-              <div>
-                <dt>Volume</dt>
-                <dd>{usd(selected.stats.totalVolume)}</dd>
-              </div>
-              <div>
-                <dt>Transactions</dt>
-                <dd>{compact(selected.stats.totalTransactions)}</dd>
-              </div>
-              <div>
-                <dt>Data window</dt>
-                <dd>{periodLabel(period)}</dd>
-              </div>
-            </dl>
+                <span className="signalLabel">
+                  <InfoTerm
+                    label={protocol === "all" ? "Average payment size" : protocol === "mpp" ? "Average MPP payment size" : "Average x402 payment size"}
+                    definition={
+                      protocol === "all"
+                        ? "Combined MPP and x402 payment value divided by their combined qualifying payment count. Protocol totals remain visible in the calculation."
+                        : protocol === "mpp"
+                        ? "The mean identified MPP payment value in the selected window."
+                        : "The mean payer-originated USDC value per reconstructed x402 payment. Receive-and-forward chains count once."
+                    }
+                    formula="Observed value ÷ qualifying records."
+                    example={`${usd(selected.stats.totalVolume)} ÷ ${compact(selected.stats.totalTransactions)} = ${usd(average, true)} per record.`}
+                  />
+                </span>
+                <strong>{usd(average, true)}</strong>
+                <p>{protocol === "all" ? "Average across both measured protocols." : protocol === "mpp" ? "Average identified MPP payment." : "Average reconstructed x402 payment."}</p>
+                <div className="signalRule" />
+                <dl>
+                  <div>
+                    <dt>{selectedProtocolData.volumeLabel}</dt>
+                    <dd>{usd(selected.stats.totalVolume)}</dd>
+                  </div>
+                  <div>
+                    <dt>Observed records</dt>
+                    <dd>{compact(selected.stats.totalTransactions)}</dd>
+                  </div>
+                  <div>
+                    <dt>Data window</dt>
+                    <dd>{periodLabel(period)}</dd>
+                  </div>
+                </dl>
           </article>
         </div>
       </section>
@@ -1836,7 +2576,10 @@ export default function Home() {
               <button
                 key={item.days}
                 className={period === item.days ? "active" : ""}
+                disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                 onClick={() => {
+                  if (item.disabled) return;
                   setPeriod(item.days);
                   setServicePage(1);
                 }}
@@ -1848,40 +2591,40 @@ export default function Home() {
         </div>
         <div className="evidenceGrid">
           <article>
-            <span className="evidenceState liveEvidence">Live</span>
-            <small>Observed settlement layer</small>
+            <span className="evidenceState liveEvidence">Directly observed</span>
+            <small>Qualifying records</small>
             <strong>{compact(selected.stats.totalTransactions)}</strong>
             <p>
-              Successful protocol-indexed transactions in the selected window.
+              Records matching the published MPP or x402 direct-source method in
+              the exact rolling window.
             </p>
           </article>
           <article>
-            <span className="evidenceState resolvedEvidence">Observed</span>
-            <small>Active server identities</small>
+            <span className="evidenceState resolvedEvidence">Directly observed</span>
+            <small>Active recipient addresses</small>
             <strong>{compact(selected.stats.uniqueRecipients)}</strong>
             <p>
-              Distinct recipient identities paid in this window—not companies,
+              Distinct recipient addresses paid in this window—not servers or companies,
               and not the named service-directory count.
             </p>
           </article>
-          <article>
-            <span className="evidenceState betaEvidence">Methodology beta</span>
-            <small>Quality adjustment</small>
-            <strong>Unadjusted</strong>
+          <aside className="qualityDisclosure">
+            <span>Data quality</span>
             <p>
-              Current totals still include testing, internal activity, and
-              unresolved counterparties. The classification model will publish
-              confidence ranges rather than silent exclusions.
+              These are raw observed totals. Testing, duplicate, internal, and
+              unresolved activity may be included. Adjusted estimates will only
+              appear after the rules, backfill, and confidence ranges are published.
             </p>
-          </article>
+            <a href="/coverage">See coverage and known limits ↗</a>
+          </aside>
         </div>
       </section>
 
       <section className="section servicesSection" id="services">
         <div className="sectionHeading">
           <div>
-            <span className="sectionNumber">03 / Service economy</span>
-            <h2>Where {PROTOCOL_LABELS[protocol]} payments go</h2>
+            <span className="sectionNumber">03 / Recipients</span>
+            <h2>Recipients</h2>
           </div>
           <div className="servicesHeadingAside">
             <div className="periodControl" aria-label="Service directory time period">
@@ -1889,7 +2632,10 @@ export default function Home() {
                 <button
                   key={item.days}
                   className={period === item.days ? "active" : ""}
+                  disabled={item.disabled || (item.days === 0 && !allTimeAvailable)}
+                  title={item.days === 0 && !allTimeAvailable ? allTimeUnavailableTitle : undefined}
                   onClick={() => {
+                    if (item.disabled) return;
                     setPeriod(item.days);
                     setServicePage(1);
                   }}
@@ -1903,6 +2649,95 @@ export default function Home() {
               the selected period.
             </p>
           </div>
+        </div>
+
+        <div className="directoryTools">
+          <div className="directoryView" aria-label="Recipient directory view">
+            <button className="active">Named services</button>
+            <button disabled title="The address-level recipient directory will unlock after the direct identity index is production-ready.">All recipients</button>
+          </div>
+          <form
+            className="directorySearch"
+            onSubmit={searchServices}
+            onBlur={(event) => {
+              if (!event.currentTarget.contains(event.relatedTarget)) setSuggestionsOpen(false);
+            }}
+            role="search"
+          >
+            <label className="srOnly" htmlFor="service-search">Search named services</label>
+            <div className="directorySearchField">
+              <input
+                id="service-search"
+                type="search"
+                value={serviceSearch}
+                role="combobox"
+                aria-autocomplete="list"
+                aria-expanded={suggestionsOpen}
+                aria-controls={serviceSuggestionListId}
+                aria-activedescendant={suggestionIndex >= 0 ? `${serviceSuggestionListId}-${suggestionIndex}` : undefined}
+                onFocus={() => {
+                  if (serviceSuggestions.length || suggestionsLoading) setSuggestionsOpen(true);
+                }}
+                onChange={(event) => {
+                  setServiceSearch(event.target.value);
+                  setSuggestionsOpen(true);
+                }}
+                onKeyDown={(event) => {
+                  if (event.key === "Escape") {
+                    setSuggestionsOpen(false);
+                    setSuggestionIndex(-1);
+                    return;
+                  }
+                  if (event.key === "ArrowDown" || event.key === "ArrowUp") {
+                    if (!serviceSuggestions.length) return;
+                    event.preventDefault();
+                    setSuggestionsOpen(true);
+                    setSuggestionIndex((current) => {
+                      if (event.key === "ArrowDown") return Math.min(serviceSuggestions.length - 1, current + 1);
+                      return Math.max(0, current < 0 ? serviceSuggestions.length - 1 : current - 1);
+                    });
+                    return;
+                  }
+                  if (event.key === "Enter" && suggestionIndex >= 0 && serviceSuggestions[suggestionIndex]) {
+                    event.preventDefault();
+                    selectServiceSuggestion(serviceSuggestions[suggestionIndex]);
+                  }
+                }}
+                placeholder="Search name, domain, or address"
+              />
+              {suggestionsOpen && serviceSearch.trim().length >= 2 ? (
+                <ul className="serviceSuggestions" id={serviceSuggestionListId} role="listbox">
+                  {suggestionsLoading ? <li className="suggestionStatus">Searching services…</li> : null}
+                  {!suggestionsLoading && !serviceSuggestions.length ? (
+                    <li className="suggestionStatus">No matching services</li>
+                  ) : null}
+                  {serviceSuggestions.map((service, index) => (
+                    <li
+                      id={`${serviceSuggestionListId}-${index}`}
+                      key={`${service.protocol}-${service.id}`}
+                      role="option"
+                      aria-selected={suggestionIndex === index}
+                    >
+                      <button
+                        type="button"
+                        className={suggestionIndex === index ? "active" : ""}
+                        onMouseDown={(event) => event.preventDefault()}
+                        onClick={() => selectServiceSuggestion(service)}
+                      >
+                        <span>
+                          <strong>{service.name}</strong>
+                          <small>{service.url.replace(/^https?:\/\//, "").replace(/\/$/, "")}</small>
+                        </span>
+                        <i>{service.protocol.toUpperCase()}</i>
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+            <button type="submit">Search</button>
+            {serviceQuery && <button type="button" onClick={() => { setServiceSearch(""); setServiceQuery(""); setServiceSuggestions([]); setSuggestionsOpen(false); setServicePage(1); }}>Clear</button>}
+          </form>
         </div>
 
         <div className="directorySummary">
@@ -1971,7 +2806,15 @@ export default function Home() {
                     Payer addresses {sort === "buyers" ? "↓" : ""}
                   </button>
                 </th>
-                <th>Latest</th>
+                {concentrationAvailable ? <th>Top 10 buyer share</th> : null}
+                <th>
+                  <button
+                    className={sort === "latest" ? "sortActive" : ""}
+                    onClick={() => { setSort("latest"); setServicePage(1); }}
+                  >
+                    Latest {sort === "latest" ? "↓" : ""}
+                  </button>
+                </th>
               </tr>
             </thead>
             <tbody>
@@ -2001,6 +2844,13 @@ export default function Home() {
                   <td>{compact(service.stats.transactions)}</td>
                   <td>{usd(service.stats.volume)}</td>
                   <td>{compact(service.stats.buyers)}</td>
+                  {concentrationAvailable ? (
+                    <td>
+                      {service.buyerConcentration?.evidenceStatus === "verified" ? (
+                        <BuyerConcentrationDisclosure concentration={service.buyerConcentration} />
+                      ) : null}
+                    </td>
+                  ) : null}
                   <td className="latest">{relativeTime(service.stats.latestTx)}</td>
                 </tr>
               ))}
@@ -2024,13 +2874,14 @@ export default function Home() {
                       <td>—</td>
                       <td>—</td>
                       <td>—</td>
+                      {concentrationAvailable ? <td>—</td> : null}
                       <td>—</td>
                     </tr>
                   ),
                 )}
               {!directoryLoading && directoryError && (
                 <tr className="directoryErrorRow">
-                  <td colSpan={5}>{directoryError}</td>
+                  <td colSpan={concentrationAvailable ? 6 : 5}>{directoryError}</td>
                 </tr>
               )}
             </tbody>
@@ -2097,8 +2948,8 @@ export default function Home() {
         <div className="identityGrid">
           <article>
             <span>Address layer</span>
-            <strong>Active payer + server identities</strong>
-            <p>Live source-reported identifiers, with cross-wallet and cross-protocol duplication disclosed.</p>
+            <strong>Active payer + recipient addresses</strong>
+            <p>Directly observed identifiers, with cross-wallet and cross-protocol duplication disclosed.</p>
           </article>
           <article>
             <span>Wallet layer</span>
@@ -2130,8 +2981,9 @@ export default function Home() {
             <span>01</span>
             <h3>Observe</h3>
             <p>
-              Read-only payment aggregates and source-native time series are
-              refreshed from the MPPScan and x402scan public indexes.
+              Current beta totals are reconstructed independently from Base and Tempo
+              chain evidence. MPPScan and x402scan are used only as reconciliation
+              references.
             </p>
           </article>
           <article>
@@ -2171,7 +3023,8 @@ export default function Home() {
           <span>THE AGENTIC PAYMENTS INDEX</span>
         </a>
         <p>
-          Independent, open evidence layer using public analytics from{" "}
+          Current beta data is reconstructed independently from Base and Tempo chain
+          evidence. Public explorers such as{" "}
           <a href="https://mppscan.com" target="_blank" rel="noreferrer">
             MPPScan
           </a>{" "}
@@ -2179,11 +3032,12 @@ export default function Home() {
           <a href="https://www.x402scan.com" target="_blank" rel="noreferrer">
             x402scan
           </a>
-          . Not affiliated with either index.
+          {" "}are reconciliation references—not data feeds. Not affiliated with either index.
+          {" "}<a href="/about">About</a> · <a href="/coverage">Coverage</a> ·{" "}
+          <a href="https://github.com/NITYAio/agentic-payments-index" target="_blank" rel="noreferrer">Contribute</a>
         </p>
         <span>
-          Times shown in UTC · Updated{" "}
-          {data.asOf ? data.asOf.slice(11, 16) : "when data connects"}
+          Updated through {data.asOf ? `${exactTime(data.asOf)} UTC` : "when data connects"}
         </span>
       </footer>
       {submissionOpen && (

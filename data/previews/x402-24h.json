@@ -1,0 +1,56 @@
+{
+  "sourceKey": "direct:x402:base-usdc:cdp-sql",
+  "protocol": "x402",
+  "network": "base",
+  "queryHash": "620f2e8833b49df9bb001161d75398b1e0c7d67a5562ce6e57caca54d7737dbf",
+  "inputRowCount": 436383,
+  "metrics": [
+    {
+      "activityDate": "2026-08-09",
+      "measurementUnit": "onchain_settlement",
+      "transactionCount": 77795,
+      "settlementCount": 77795,
+      "volumeUsdMicros": 12302663886,
+      "buyerCount": 1733,
+      "sellerCount": 487,
+      "evidenceLevel": "deterministic",
+      "isAdjusted": false,
+      "limitation": "Base USDC transactions submitted by the public facilitator-address registry. Transaction hashes are deduplicated, but proxy pass-through transfer volume and identities remain unadjusted; non-Base and non-USDC x402 payments are excluded."
+    },
+    {
+      "activityDate": "2026-08-10",
+      "measurementUnit": "onchain_settlement",
+      "transactionCount": 347008,
+      "settlementCount": 347008,
+      "volumeUsdMicros": 34534547129,
+      "buyerCount": 2517,
+      "sellerCount": 1500,
+      "evidenceLevel": "deterministic",
+      "isAdjusted": false,
+      "limitation": "Base USDC transactions submitted by the public facilitator-address registry. Transaction hashes are deduplicated, but proxy pass-through transfer volume and identities remain unadjusted; non-Base and non-USDC x402 payments are excluded."
+    }
+  ],
+  "windowSummary": {
+    "rangeStart": "2026-08-09T15:08:31.000Z",
+    "rangeEnd": "2026-08-10T15:08:31.000Z",
+    "measurementUnit": "onchain_settlement",
+    "transactionCount": 424803,
+    "settlementCount": 424803,
+    "volumeUsdMicros": 46837211015,
+    "buyerCount": 3189,
+    "sellerCount": 1822,
+    "evidenceLevel": "deterministic",
+    "isAdjusted": false,
+    "limitation": "Base USDC transactions submitted by the public facilitator-address registry. Transaction hashes and period identities are deduplicated, but proxy pass-through transfer volume and identity ownership remain unadjusted; non-Base and non-USDC x402 payments are excluded."
+  },
+  "coverage": {
+    "measurementUnit": "onchain_settlement",
+    "sourceType": "chain_sql",
+    "sourceUrl": "https://docs.cdp.coinbase.com/data/sql-api/welcome",
+    "coverageStart": "2026-08-09T15:08:31.000Z",
+    "coverageEnd": "2026-08-10T15:08:31.000Z",
+    "status": "active",
+    "limitation": "Base USDC transactions submitted by the public facilitator-address registry. Transaction hashes are deduplicated, but proxy pass-through transfer volume and identities remain unadjusted; non-Base and non-USDC x402 payments are excluded.",
+    "methodologyUrl": "https://agenticpaymentsindex.org/methodology"
+  }
+}

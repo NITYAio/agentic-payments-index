@@ -6,7 +6,7 @@ The Agentic Payments Index calculates retention only from stable, independently 
 
 MPPScan and x402scan provide useful market aggregates, but aggregate unique-payer totals cannot tell whether the same identity returned in a later month. Retention requires an identity history.
 
-The identity layer therefore stores monthly activity facts derived from verified payment evidence. It does not store raw payer or payee identifiers. Each identity is normalized within its protocol and network scope, then SHA-256 hashed before it reaches D1.
+The identity layer therefore stores monthly activity facts derived from verified payment evidence. It does not store raw payer or payee identifiers. Each identity is normalized within its protocol and network scope, then SHA-256 hashed locally before historical artifacts are written or data reaches D1.
 
 ## Accepted evidence
 
@@ -43,9 +43,11 @@ Official references:
 
 `monthly_identity_activity` stores segment-scoped payer and payee activity by protocol, network, identity hash, calendar month, transaction count, USD micros, and evidence level.
 
+`cohort_snapshot_runs` and `cohort_snapshot_cells` store the exact aggregate retention matrix used by the public application. They contain cohort sizes and retained counts only—never raw or hashed identities. The latest complete snapshot supersedes the prior public snapshot without deleting its audit record.
+
 Segments are idempotent. Replaying the same segment and checksum has no effect. Reusing a segment id with different contents is rejected.
 
-This segmented monthly model is intentionally compact: cohort analysis scales with active identities rather than raw payment volume, preserving the side-project cost target while leaving raw evidence with the source collector.
+The historical collector retains hashed identity-month evidence outside the public application, calculates exact intersections locally, and publishes only the compact cohort snapshot. This keeps public queries fast and preserves the side-project cost target without exposing a pseudonymous identity graph.
 
 ## Cohort definitions
 
@@ -58,7 +60,27 @@ The current partial month is excluded. Combined MPP + x402 cohorts do not dedupl
 
 ## Operational ingestion
 
-The trusted collector sends normalized segments to `/api/internal/identity-ingest` using a bearer secret stored in the hosting environment. A segment accepts at most 500 normalized events; collectors should partition by source, network, and a monotonic cursor or block range.
+The trusted collector sends normalized segments to `/api/internal/identity-ingest` using a bearer secret stored in the hosting environment. A segment accepts either raw normalized events that are hashed inside the Worker, or up to 1,000 locally hashed monthly identity rows. Historical collection uses the latter mode so raw identities never appear in saved artifacts or cross the ingestion boundary.
+
+Privacy-preserving history collection is available for both protocols:
+
+```bash
+npm run identity:collect -- --protocol mpp --from 2026-02-16 --to 2026-08-11 --no-ingest
+npm run identity:collect -- --protocol x402 --from 2025-05-09 --to 2026-08-11 --no-ingest
+```
+
+Generated identity-history files are deliberately gitignored. They can be audited locally, ingested, and discarded without publishing pseudonymous activity histories in the open-source repository.
+
+To turn completed MPP and x402 manifests into compact, production-ready snapshots:
+
+```bash
+npm run cohort:snapshot -- \
+  --mpp-manifest /private/tmp/mpp-manifest.json \
+  --x402-manifest /private/tmp/x402-manifest.json \
+  --no-ingest
+```
+
+The production collector posts each generated snapshot to `/api/internal/cohort-snapshot-ingest` with the same identity-ingestion bearer secret. Snapshot ingestion is immutable and idempotent; only the latest complete snapshot for each protocol scope is served.
 
 To ingest an already normalized segment:
 

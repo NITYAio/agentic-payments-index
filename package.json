@@ -3,7 +3,7 @@
   "version": "0.3.0",
   "private": true,
   "engines": {
-    "node": ">=22.13.0"
+    "node": ">=24.0.0"
   },
   "scripts": {
     "dev": "WRANGLER_LOG_PATH=.wrangler/wrangler.log vinext dev",
@@ -12,9 +12,23 @@
     "test": "npm run build && node --test tests/*.test.mjs",
     "lint": "eslint . --ignore-pattern dist --ignore-pattern .next",
     "db:generate": "drizzle-kit generate",
-    "identity:ingest": "node scripts/ingest-identity-segment.mjs"
+    "identity:ingest": "node scripts/ingest-identity-segment.mjs",
+    "identity:collect": "node --env-file-if-exists=.env.local scripts/collect-identity-history.mjs",
+    "identity:backfill:x402": "node --env-file-if-exists=.env.local scripts/backfill-x402-substreams.mjs",
+    "identity:backfill:x402:events": "node --env-file-if-exists=.env.local scripts/backfill-x402-event-history.mjs",
+    "identity:backfill:x402:index": "node --env-file-if-exists=.env.local scripts/backfill-x402-index-history.mjs",
+    "cohort:snapshot": "node --env-file-if-exists=.env.local scripts/build-cohort-snapshots.mjs",
+    "cohort:merge": "node --env-file-if-exists=.env.local scripts/merge-cohort-snapshots.mjs",
+    "direct:build:x402-history": "node scripts/build-x402-event-history.mjs",
+    "direct:merge-history": "node scripts/merge-direct-source-history.mjs",
+    "direct:collect": "node --env-file-if-exists=.env.local scripts/collect-direct-source.mjs",
+    "direct:refresh": "node --env-file-if-exists=.env.local scripts/refresh-direct-source-windows.mjs",
+    "direct:refresh:x402": "node --env-file-if-exists=.env.local scripts/refresh-x402-sqd-windows.mjs",
+    "data:freshness": "node scripts/check-production-freshness.mjs",
+    "direct:registry": "node scripts/sync-x402-facilitators.mjs"
   },
   "dependencies": {
+    "@subsquid/evm-stream": "^0.1.3",
     "drizzle-orm": "0.45.2",
     "next": "16.2.6",
     "react": "19.2.6",

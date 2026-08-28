@@ -39,15 +39,55 @@ test("server-renders The Agentic Payments Index experience", async () => {
   assert.match(html, /Ask the Index/i);
   assert.match(html, /Ask about metrics/i);
   assert.match(html, /Public beta/i);
-  assert.match(html, /Identity history and cohort coverage are being backfilled/i);
+  assert.match(html, /Loading the latest verified direct-chain snapshot/i);
+  assert.match(html, /MPP on Tempo.*x402 on Base/i);
+  assert.match(html, /Payment value/i);
+  assert.match(html, /Trust Barometer/i);
+  assert.match(html, /Named services/i);
+  assert.doesNotMatch(html, /Not combined/i);
   assert.match(html, /What this index measures/i);
-  assert.match(html, /Times shown in UTC/i);
+  assert.match(html, /Updated through/i);
   assert.match(html, /Network pulse/i);
   assert.match(html, /Active payer addresses/i);
-  assert.match(html, /Active server identities/i);
+  assert.match(html, /Active recipient addresses/i);
   assert.match(html, /Identity intelligence/i);
   assert.match(html, /Submit a service/i);
+  assert.match(html, /Average daily transactions/i);
+  assert.doesNotMatch(html, /Transaction velocity/i);
+  assert.doesNotMatch(html, /Relative activity/i);
+  assert.doesNotMatch(html, /Signal \/ Average payment size/i);
   assert.doesNotMatch(html, /codex-preview|Your site is taking shape/i);
+});
+
+test("server-renders the named About and protocol coverage pages", async () => {
+  const [aboutResponse, coverageResponse] = await Promise.all([
+    render("/about"),
+    render("/coverage"),
+  ]);
+  assert.equal(aboutResponse.status, 200);
+  assert.equal(coverageResponse.status, 200);
+  const [about, coverage] = await Promise.all([
+    aboutResponse.text(),
+    coverageResponse.text(),
+  ]);
+  assert.match(about, /Nitya Sharma/i);
+  assert.match(about, /founder of Simpl/i);
+  assert.match(about, /Submit data or a correction/i);
+  assert.match(coverage, /What the market discloses/i);
+  assert.match(coverage, /Virtuals ACP/i);
+  assert.match(coverage, /Why there is no.*Other.*total/i);
+  assert.match(coverage, /Trust Barometer methodology/i);
+});
+
+test("server-renders the private direct-source verification surface", async () => {
+  const response = await render("/direct-preview");
+  assert.equal(response.status, 200);
+  const html = await response.text();
+  assert.match(html, /Direct-source cutover review/i);
+  assert.match(html, /Primary evidence/i);
+  assert.match(html, /Payment value is counted once at the payer.*original amount/i);
+  assert.match(html, /recipient value and gross transfer movement remain available for audit/i);
+  assert.match(html, /Loading verified evidence/i);
 });
 
 test("ships product metadata and removes starter dependencies", async () => {
@@ -64,8 +104,10 @@ test("ships product metadata and removes starter dependencies", async () => {
   assert.match(page, /Machine-readable view/i);
   assert.match(page, /Indexed service records/i);
   assert.match(page, /Payer addresses/i);
-  assert.match(page, /Available indexed history/i);
+  assert.match(page, /History/i);
   assert.match(page, /\/api\/ask/i);
+  assert.match(page, /Copy live link/i);
+  assert.match(page, /Download card/i);
   assert.match(layout, /og-v5\.png/i);
   assert.match(layout, /index:\s*false/i);
   assert.match(layout, /follow:\s*false/i);

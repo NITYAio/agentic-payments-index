@@ -1,0 +1,35 @@
+name: Methodology proposal
+description: Propose a metric definition, entity rule, adjustment, or confidence model.
+title: "[Methodology]: "
+labels:
+  - methodology
+  - needs-verification
+body:
+  - type: textarea
+    id: question
+    attributes:
+      label: Decision to make
+      description: State the metric or classification problem in plain language.
+    validations:
+      required: true
+  - type: textarea
+    id: rule
+    attributes:
+      label: Proposed rule or formula
+      description: Make the transformation reproducible.
+    validations:
+      required: true
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence and test cases
+      description: Link public evidence and include examples that should pass and fail.
+    validations:
+      required: true
+  - type: textarea
+    id: errors
+    attributes:
+      label: False positives, false negatives, and confidence
+      description: Describe how the rule can be wrong and how uncertainty should be displayed.
+    validations:
+      required: true

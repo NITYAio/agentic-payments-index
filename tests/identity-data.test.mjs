@@ -1,7 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { aggregateIdentityActivity } from "../lib/identity-data.ts";
+import {
+  aggregateIdentityActivity,
+  finalizePrehashedMonthlyActivity,
+  validatePrehashedMonthlyActivity,
+} from "../lib/identity-data.ts";
 
 test("aggregates events by hashed identity, role, and month", async () => {
   const activity = await aggregateIdentityActivity("segment-1", [
@@ -46,4 +50,47 @@ test("aggregates events by hashed identity, role, and month", async () => {
   assert.equal(januaryPayer.volumeUsdMicros, 35_000);
   assert.equal(januaryPayer.identityHash.length, 64);
   assert.equal(JSON.stringify(activity).includes("0x1111111111111111111111111111111111111111"), false);
+});
+
+test("accepts locally hashed monthly activity without raw identities", async () => {
+  const input = validatePrehashedMonthlyActivity({
+    role: "payer",
+    identityScheme: "EVM",
+    identityHash: "a".repeat(64),
+    activityMonth: "2026-01",
+    transactionCount: 7,
+    volumeUsdMicros: 42_000,
+    firstSeenAt: "2026-01-02T01:00:00.000Z",
+    lastSeenAt: "2026-01-28T23:00:00.000Z",
+    evidenceLevel: "deterministic",
+  });
+  const rows = await finalizePrehashedMonthlyActivity(
+    "segment-2",
+    "x402",
+    "BASE",
+    [input],
+  );
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].network, "base");
+  assert.equal(rows[0].identityScheme, "evm");
+  assert.equal(rows[0].identityHash, "a".repeat(64));
+  assert.equal(rows[0].id.length, 64);
+});
+
+test("rejects malformed or cross-month prehashed activity", () => {
+  assert.throws(
+    () =>
+      validatePrehashedMonthlyActivity({
+        role: "payer",
+        identityScheme: "evm",
+        identityHash: "A".repeat(64),
+        activityMonth: "2026-01",
+        transactionCount: 1,
+        volumeUsdMicros: 0,
+        firstSeenAt: "2026-01-01T00:00:00.000Z",
+        lastSeenAt: "2026-02-01T00:00:00.000Z",
+        evidenceLevel: "deterministic",
+      }),
+    /identity hash/,
+  );
 });

@@ -1,5 +1,5 @@
 type ProtocolKey = "all" | "mpp" | "x402";
-type SortKey = "transactions" | "volume" | "buyers";
+type SortKey = "transactions" | "volume" | "buyers" | "latest";
 
 type Service = {
   id: string;
@@ -56,6 +56,7 @@ const SORT_FIELDS: Record<SortKey, string> = {
   transactions: "tx_count",
   volume: "total_amount",
   buyers: "unique_buyers",
+  latest: "tx_count",
 };
 
 function cleanTitle(value: string | null, origin: string) {
@@ -224,6 +225,22 @@ async function loadMppPrefix(
   };
 }
 
+async function loadAllMppOrigins(days: 0 | 1 | 7 | 30, sort: SortKey) {
+  const first = await fetchMppPage(days, sort, 0, UPSTREAM_PAGE_SIZE);
+  const pageCount = Math.ceil(first.total / UPSTREAM_PAGE_SIZE);
+  const remaining = await Promise.all(
+    Array.from({ length: Math.max(0, pageCount - 1) }, (_, index) =>
+      fetchMppPage(days, sort, index + 1, UPSTREAM_PAGE_SIZE),
+    ),
+  );
+  return {
+    items: [first, ...remaining].flatMap((page) => page.items).sort(
+      (left, right) => metricForSort(right, sort) - metricForSort(left, sort),
+    ),
+    total: first.total,
+  };
+}
+
 async function loadAllX402Origins(
   days: 0 | 1 | 7 | 30,
   sort: SortKey,
@@ -283,6 +300,7 @@ async function loadAllX402Origins(
 }
 
 function metricForSort(service: Service, sort: SortKey) {
+  if (sort === "latest") return new Date(service.stats.latestTx).getTime() || 0;
   return service.stats[sort];
 }
 
@@ -291,7 +309,18 @@ function parseProtocol(value: string | null): ProtocolKey {
 }
 
 function parseSort(value: string | null): SortKey {
-  return value === "volume" || value === "buyers" ? value : "transactions";
+  return value === "volume" || value === "buyers" || value === "latest"
+    ? value
+    : "transactions";
+}
+
+function matchesQuery(service: Service, query: string) {
+  if (!query) return true;
+  const normalized = query.toLowerCase();
+  return [service.name, service.description, service.url, service.id]
+    .join(" ")
+    .toLowerCase()
+    .includes(normalized);
 }
 
 function parseDays(value: string | null): 0 | 1 | 7 | 30 {
@@ -320,6 +349,7 @@ export async function GET(request: Request) {
   const url = new URL(request.url);
   const protocol = parseProtocol(url.searchParams.get("protocol"));
   const sort = parseSort(url.searchParams.get("sort"));
+  const query = (url.searchParams.get("q") ?? "").trim();
   const days = parseDays(url.searchParams.get("days"));
   const page = boundedInteger(url.searchParams.get("page"), 1, 1, 500);
   const pageSize = boundedInteger(
@@ -332,6 +362,26 @@ export async function GET(request: Request) {
 
   try {
     if (protocol === "mpp") {
+      if (query || sort === "latest") {
+        const result = await loadAllMppOrigins(days, sort);
+        const filtered = result.items.filter((item) => matchesQuery(item, query));
+        const items = filtered.slice(offset, offset + pageSize);
+        return Response.json(
+          {
+            items: items.map((item, index) => ({ ...item, rank: offset + index + 1 })),
+            total: filtered.length,
+            totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
+            page,
+            pageSize,
+            sourceTotals: { mpp: result.total, x402: 0 },
+            disclosure: query
+              ? `Named MPP service records matching “${query}” across the complete public directory.`
+              : "Named MPP service records sorted by most recent observed activity.",
+            asOf: new Date().toISOString(),
+          },
+          { headers: { "Cache-Control": "public, max-age=60, s-maxage=300" } },
+        );
+      }
       const result = await fetchMppPage(
         days,
         sort,
@@ -361,20 +411,22 @@ export async function GET(request: Request) {
 
     if (protocol === "x402") {
       const result = await loadAllX402Origins(days, sort);
-      const items = result.items.slice(offset, offset + pageSize);
+      const filtered = result.items.filter((item) => matchesQuery(item, query));
+      const items = filtered.slice(offset, offset + pageSize);
       return Response.json(
         {
           items: items.map((item, index) => ({
             ...item,
             rank: offset + index + 1,
           })),
-          total: result.total,
-          totalPages: Math.max(1, Math.ceil(result.total / pageSize)),
+          total: filtered.length,
+          totalPages: Math.max(1, Math.ceil(filtered.length / pageSize)),
           page,
           pageSize,
           sourceTotals: { mpp: 0, x402: result.total },
-          disclosure:
-            `All resolved x402 service origins returned across the public Bazaar pages for this window, regrouped across ${compactInteger(result.rawRecipientRecords)} underlying recipient records.`,
+          disclosure: query
+            ? `Named x402 service records matching “${query}” across the complete public Bazaar directory.`
+            : `All named x402 service origins returned across the public Bazaar pages for this window, regrouped across ${compactInteger(result.rawRecipientRecords)} underlying recipient records.`,
           asOf: new Date().toISOString(),
         },
         {
@@ -385,14 +437,14 @@ export async function GET(request: Request) {
 
     const needed = page * pageSize;
     const [mpp, x402] = await Promise.all([
-      loadMppPrefix(days, sort, needed),
+      query || sort === "latest" ? loadAllMppOrigins(days, sort) : loadMppPrefix(days, sort, needed),
       loadAllX402Origins(days, sort),
     ]);
-    const combined = [...mpp.items, ...x402.items].sort(
+    const combined = [...mpp.items, ...x402.items].filter((item) => matchesQuery(item, query)).sort(
       (left, right) =>
         metricForSort(right, sort) - metricForSort(left, sort),
     );
-    const total = mpp.total + x402.total;
+    const total = query ? combined.length : mpp.total + x402.total;
     const items = combined.slice(offset, offset + pageSize);
 
     return Response.json(
@@ -406,8 +458,9 @@ export async function GET(request: Request) {
         page,
         pageSize,
         sourceTotals: { mpp: mpp.total, x402: x402.total },
-        disclosure:
-          "Combined resolved service-origin records. x402 origins are regrouped across every Bazaar page; a service indexed on both protocols may still appear twice and counts are not presented as unique companies.",
+        disclosure: query
+          ? `Named service records matching “${query}” across the complete MPP and x402 directories.`
+          : "Combined named service-origin records. x402 origins are regrouped across every Bazaar page; a service indexed on both protocols may still appear twice and counts are not unique companies.",
         asOf: new Date().toISOString(),
       },
       {

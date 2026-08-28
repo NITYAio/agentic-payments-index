@@ -1,8 +1,8 @@
 # The Agentic Payments Index — vNext specification
 
 Status: approved for implementation  
-Owner: Nityanand Sharma  
-Updated: 2026-08-01
+Owner: Nitya Sharma
+Updated: 2026-08-07
 
 ## Product promise
 
@@ -34,12 +34,14 @@ The public headline remains **“The machine economy, made legible.”** “Agen
 
 ### Metrics and terminology
 
-- **Transactions:** successful protocol-indexed payment events in the selected window.
-- **USD volume:** recorded stablecoin settlement value in the selected window.
-- **Average payment size:** USD volume divided by successful transactions.
-- **Transaction velocity:** successful transactions divided by the length of the selected window. For All, the denominator is the available indexed-history span.
+- **Transactions:** records matching the protocol-specific direct-source method in the selected window.
+- **MPP payment value:** value of current-version MPP charges and settled sessions.
+- **x402 payment value:** payer-originated USDC value counted once per reconstructed payment; receive-and-forward chains resolve to the terminal recipient. Recipient net value and gross transfer movement remain auditable.
+- **Average value:** protocol-specific value divided by qualifying records. No combined MPP + x402 average is calculated.
+- **Average daily transactions:** qualifying records divided by the exact rolling-window length. Available-history calculations disclose their first and last indexed timestamps.
 - **Active payer addresses:** distinct network-normalized payer addresses observed in the selected window. This is not a count of people or autonomous agents. One actor can use several addresses; several actors can share an address; combined protocol counts may overlap.
-- **Active server identities:** distinct protocol recipient identities that received at least one observed payment in the selected window. This is not the service-directory count and not necessarily a count of companies.
+- **Active recipient addresses:** distinct network-normalized recipient addresses that received at least one observed payment in the selected window. This is not a server, company, or service-directory count.
+- **Resolved service identities:** verified mappings from payment recipients to service or directory identities. These are published separately from raw recipient-address counts.
 - **Indexed service records:** named service origins available across all paginated source-directory pages. It is directory coverage, not the active-server metric.
 - Service tables label their identity column **Payer addresses**, never “Agents.”
 - Every non-obvious term has a small superscript information affordance with a hover/focus definition and, when useful, a formula and example.
@@ -59,6 +61,8 @@ Ask the Index is a deterministic data-analysis service, not a collection of prew
 - dated spike/anomaly measurement.
 
 Every answer includes the metric, protocol, period, formula or method, source context, and the limitation material to interpretation. A “why did this spike?” answer may identify measured contributors or magnitude; it must distinguish that from an externally verified cause.
+
+Verified calculations offer X, LinkedIn, copy-link, and downloadable-card actions. Shared links reconstruct a live query and therefore state that the answer is recomputed from the latest loaded data. Immutable answer snapshots require a later persistent evidence record.
 
 ### Coverage-gated analyses
 
@@ -113,8 +117,9 @@ Contact details are private operational data and are never returned by the publi
 
 ### Current production coverage
 
-- MPP aggregates and directory: MPPScan public analytics.
-- x402 aggregates and directory: x402scan public analytics.
+- MPP aggregates: direct Tempo evidence; directory: MPPScan origins.
+- x402 aggregates: direct Base USDC evidence plus the versioned facilitator
+  registry; directory: x402scan Bazaar origins.
 - Complete source pagination is used for service-directory totals.
 - Current metrics are unadjusted observed activity and can include testing, internal traffic, and unresolved counterparties.
 
@@ -122,14 +127,17 @@ The site clearly credits and links the sources, publishes methodology, and does 
 
 ### Independent indexing path
 
-The long-term source of truth is direct read-only indexing from Tempo and supported x402 settlement networks, with upstream indexes retained for reconciliation. The storage design separates:
+The source of truth is direct read-only indexing from Tempo and supported x402 settlement networks, with upstream indexes retained for internal reconciliation. The storage design separates:
 
 - normalized payment facts and aggregate query tables;
 - service, wallet, and autonomy registries;
 - indexer checkpoints and provenance;
 - compressed raw archives for reproducibility.
 
-Direct-chain results may only be labelled live after contract coverage, decoding, reorg handling, reconciliation, and backfill tests pass. Until then the live product discloses its public-index source dependency.
+Direct-chain 24-hour, 7-day, and 30-day results are live in public beta after
+contract coverage, decoding, and reconciliation tests. MPP available history
+is live from 16 February 2026. x402 and combined History views remain disabled
+until independently reconstructed terminal-recipient identity history is complete.
 
 ## Open source, IP, and API
 
@@ -137,6 +145,17 @@ Direct-chain results may only be labelled live after contract coverage, decoding
 - The public repository contains contribution, methodology, security, and data-source guidance.
 - Public read-only endpoints remain free in vNext. A paid API may later add higher limits, exports, alerts, or SLAs; underlying facts and methodology are not paywalled by default.
 - A separate data licence must be chosen before distributing a bulk derived dataset.
+- The About page names Nitya Sharma, founder of Simpl, states why the Index exists, and routes corrections and methodology debate into public GitHub issues and Discussions.
+- `DATA.md` defines source eligibility, provenance, overlap, terms, and correction requirements. Issue forms turn source and methodology contributions into an auditable relationship history.
+- A concise monthly note records what changed, what the data does and does not prove, and the next open research questions.
+
+## Protocol coverage map
+
+MPP and x402 remain the only combined totals until another source exposes a comparable successful-payment event, settlement value, time window, identity definition, and deduplication rule. Virtuals ACP, AP2, UCP, Nevermined, and Skyfire are tracked separately by sector role and disclosure state. The product does not create an “Other” total by mixing payments, settlements, mandates, checkouts, and agent jobs.
+
+The x402 cards and charts use the independent Base observation. It is labelled
+facilitator-associated payment activity because the current
+method cannot prove that every matched transfer is one end-user payment.
 
 ## Cost and operations
 
@@ -149,7 +168,10 @@ Direct-chain results may only be labelled live after contract coverage, decoding
 ## vNext acceptance criteria
 
 1. Protocol selection changes every visible chart and metric; a single-protocol view never retains the other protocol’s series or legend.
-2. 24h, 7d, 30d, and All work in overview, network, evidence, and service-directory views.
+2. 24h, 7d, and 30d work across overview, network, evidence, and service-directory
+   views. Available history is enabled per protocol only when that protocol's
+   independently verified backfill is complete; combined history requires every
+   included protocol.
 3. All displayed numbers are live, derived, or explicitly unavailable—never placeholders presented as facts.
 4. Ask the Index answers supported query classes in real time and discloses unsupported evidence instead of guessing.
 5. Query regression tests cover phrasing variants, protocol selection, all windows, comparisons, spikes, cohorts, wallets, and autonomy.

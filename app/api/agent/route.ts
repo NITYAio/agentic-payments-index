@@ -10,7 +10,11 @@ export async function GET(request: Request) {
       release: {
         stage: "public-beta",
         discovery: "unlisted",
-        identityHistory: "backfill-in-progress",
+        identityHistory: {
+          mpp: "available",
+          x402: "backfill-in-progress",
+          combined: "awaiting-x402",
+        },
       },
       access: {
         authentication: "none",
@@ -21,7 +25,7 @@ export async function GET(request: Request) {
         network: {
           url: `${origin}/api/network`,
           description:
-            "Protocol-level 24h, 7d, 30d, and available-history aggregates and time-series buckets.",
+            "Direct-source exact rolling 24h, 7d, and 30d aggregates and time-series buckets. MPP History is available; x402 and combined History remain evidence-gated.",
         },
         services: {
           url: `${origin}/api/services`,
@@ -66,7 +70,7 @@ export async function GET(request: Request) {
         },
       },
       metricStates: {
-        raw: "Observed protocol-indexed activity.",
+        raw: "Directly observed activity under protocol-specific attribution rules.",
         resolved:
           "Recipient activity associated with a public service-origin record.",
         adjusted:
@@ -88,13 +92,13 @@ export async function GET(request: Request) {
       provenance: [
         {
           protocol: "mpp",
-          source: "MPPScan public analytics",
-          url: "https://mppscan.com",
+          source: "Tempo direct chain evidence",
+          url: "https://docs.tempo.xyz/guide/payments/transfer-memos",
         },
         {
           protocol: "x402",
-          source: "x402scan public analytics",
-          url: "https://www.x402scan.com",
+          source: "Base USDC direct chain evidence plus versioned facilitator registry",
+          url: "https://docs.cdp.coinbase.com/data/sql-api/welcome",
         },
       ],
       citation:

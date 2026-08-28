@@ -38,7 +38,12 @@ yarn-error.log*
 
 # typescript
 next-env.d.ts
+*.tsbuildinfo
 /dist/
 /.wrangler/
 /outputs/
 /work/
+
+# privacy-preserving identity history is generated locally and ingested directly;
+# it is intentionally not published in the source repository.
+/data/identity-backfills/
